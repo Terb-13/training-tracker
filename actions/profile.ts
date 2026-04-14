@@ -2,7 +2,7 @@
 
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 
-const DEFAULT_PROFILE = {
+export const DEFAULT_PROFILE = {
   height_cm: 170,
   age: 33,
   target_calories: 3000,
