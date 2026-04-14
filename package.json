@@ -2,9 +2,16 @@
   "name": "trainer",
   "version": "0.1.0",
   "private": true,
+  "engines": {
+    "node": ">=20.19.0 <24",
+    "npm": ">=10.0.0"
+  },
   "scripts": {
     "dev": "next dev",
     "build": "next build",
+    "clean": "rm -rf .next && rm -rf node_modules/.cache 2>/dev/null || true",
+    "build:clean": "npm run clean && next build",
+    "reinstall": "rm -rf node_modules .next && npm install",
     "start": "next start",
     "lint": "eslint"
   },
@@ -20,7 +27,6 @@
     "clsx": "^2.1.1",
     "date-fns": "^4.1.0",
     "garmin-connect": "1.6.2",
-    "garmin-connect": "^1.6.2",
     "lucide-react": "^1.8.0",
     "next": "16.2.3",
     "react": "19.2.4",
@@ -30,12 +36,15 @@
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
-    "@types/node": "^20.19.39",
+    "@types/node": "^22.15.0",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "^9",
     "eslint-config-next": "16.2.3",
     "tailwindcss": "^4",
     "typescript": "^5"
+  },
+  "overrides": {
+    "semver": "^7.7.2"
   }
 }
