@@ -3,8 +3,8 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
-import { DEFAULT_PROFILE } from "@/actions/profile";
 import { encryptJson } from "@/lib/crypto/credentials";
+import { DEFAULT_PROFILE } from "@/lib/profile-constants";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import type { Database } from "@/types/database";
 

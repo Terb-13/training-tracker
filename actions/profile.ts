@@ -1,14 +1,7 @@
 "use server";
 
+import { DEFAULT_PROFILE } from "@/lib/profile-constants";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
-
-export const DEFAULT_PROFILE = {
-  height_cm: 170,
-  age: 33,
-  target_calories: 3000,
-  starting_weight_lbs: 204.2,
-  wednesday_lunch_relax: true,
-} as const;
 
 export async function ensureProfile() {
   const supabase = await createServerSupabaseClient();
