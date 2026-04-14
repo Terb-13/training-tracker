@@ -1,0 +1,23 @@
+# Stub: dump Supabase to a private repo (e.g. github.com/your-org/training_db-backups).
+# Add secrets: SUPABASE_DB_URL, BACKUP_REPO_TOKEN (fine-grained PAT with contents:write on backup repo).
+
+name: Supabase Backup
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 5 * * 0" # Weekly Sunday 05:00 UTC
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout app
+        uses: actions/checkout@v4
+
+      - name: Placeholder — wire pg_dump + push to training_db-backups
+        run: |
+          echo "TODO: install postgresql-client, then:"
+          echo "  pg_dump \"\$SUPABASE_DB_URL\" --no-owner --format=custom -f backup.dump"
+          echo "Clone private repo training_db-backups, commit backup.dump, push with BACKUP_REPO_TOKEN."
+          echo "Never echo SUPABASE_DB_URL or tokens."

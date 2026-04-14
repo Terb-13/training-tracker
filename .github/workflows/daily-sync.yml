@@ -1,0 +1,29 @@
+# Calls POST /api/sync with the service role key (same as Supabase admin).
+# Set secrets: SUPABASE_SERVICE_ROLE_KEY, SYNC_USER_ID, APP_URL (or hardcode your Vercel URL).
+
+name: Daily Garmin Sync
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 14 * * *" # 14:00 UTC — adjust to your timezone
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger sync API
+        env:
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SYNC_USER_ID: ${{ secrets.SYNC_USER_ID }}
+          APP_URL: ${{ secrets.APP_URL }}
+        run: |
+          if [ -z "$SUPABASE_SERVICE_ROLE_KEY" ] || [ -z "$SYNC_USER_ID" ] || [ -z "$APP_URL" ]; then
+            echo "Set secrets: SUPABASE_SERVICE_ROLE_KEY, SYNC_USER_ID, APP_URL (e.g. https://your-app.vercel.app)"
+            exit 1
+          fi
+          curl -sS -X POST "${APP_URL}/api/sync" \
+            -H "Authorization: Bearer ${SUPABASE_SERVICE_ROLE_KEY}" \
+            -H "Content-Type: application/json" \
+            -d "{\"userId\":\"${SYNC_USER_ID}\"}" \
+            -w "\nHTTP %{http_code}\n"

@@ -1,0 +1,20 @@
+---
+alwaysApply: true
+---
+
+You are building Brett's LOTOJA 2026 Team Training OS in Next.js 15 App Router + Supabase.
+
+Project rules:
+- Always keep the app UI/UX-first: clean KPI cards, Recharts charts, mobile-friendly, loads fast at 6:45 a.m.
+- Protect my 4:30-5:00 a.m. routine (Peloton + dumbbell strength <90 min total, showered before 7:00 a.m. market open).
+- Wednesday lunch calorie relax flag is sacred.
+- Fat-loss target: safe 0.5-1 lb/week from 204.2 lbs starting point while preserving power for September 200-mile LOTOJA.
+- Use Supabase RLS so each user sees only their data.
+- After every meaningful change (new feature, bug fix, UI tweak), run `git add .`, commit with a clear message, and `git push origin main`.
+- Never commit .env.local or secrets.
+- Use Tailwind + shadcn/ui style for professional look.
+- Include a prominent "Get Grok’s Weekly Recommendations" button that packages last 7 days data cleanly.
+
+Current task: [paste your request here, e.g. "add the dashboard layout with tabs"]
+
+Now implement the change, then commit and push.
