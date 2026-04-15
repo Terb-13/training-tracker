@@ -16,6 +16,8 @@ import {
   weightSeries as placeholderWeight,
 } from "@/lib/placeholder-data";
 
+type StrengthExerciseRow = Database["public"]["Tables"]["strength_exercises"]["Row"];
+
 export type ProfileRow = Database["public"]["Tables"]["profiles"]["Row"];
 
 export type GarminWellness = {
@@ -51,6 +53,21 @@ export type DashboardViewModel = {
     volumeKg: number | null;
     loadHint: string;
   }[];
+  strengthSessions: {
+    garmin_activity_id: number;
+    workout_name: string;
+    activity_name: string | null;
+    dateLabel: string;
+    started_at: string;
+    rows: {
+      exercise_name: string;
+      set_number: number;
+      reps: number | null;
+      weight_lbs: number | null;
+      volume_lbs: number | null;
+    }[];
+  }[];
+  strengthVolumeBySession: { dateLabel: string; workout: string; volumeLbs: number }[];
   garmin: GarminWellness;
   nutrition: {
     caloriesAvg: number;
@@ -120,6 +137,25 @@ export async function loadDashboardData(userId: string): Promise<DashboardViewMo
     .eq("user_id", userId)
     .order("started_at", { ascending: false })
     .limit(12);
+
+  const { data: strengthSessionDetail } = await supabase
+    .from("strength_sessions")
+    .select("garmin_activity_id, label, started_at")
+    .eq("user_id", userId)
+    .order("started_at", { ascending: false })
+    .limit(24);
+
+  const detailIds = strengthSessionDetail?.map((s) => s.garmin_activity_id) ?? [];
+  let exerciseRows: StrengthExerciseRow[] = [];
+  if (detailIds.length > 0) {
+    const { data: ex } = await supabase
+      .from("strength_exercises")
+      .select("*")
+      .eq("user_id", userId)
+      .in("garmin_activity_id", detailIds)
+      .order("sort_index", { ascending: true });
+    exerciseRows = ex ?? [];
+  }
 
   const { data: deficits } = await supabase
     .from("daily_deficit")
@@ -215,6 +251,44 @@ export async function loadDashboardData(userId: string): Promise<DashboardViewMo
           loadHint: s.loadHint,
         }));
 
+  const byAct = new Map<number, StrengthExerciseRow[]>();
+  for (const row of exerciseRows) {
+    const list = byAct.get(row.garmin_activity_id) ?? [];
+    list.push(row);
+    byAct.set(row.garmin_activity_id, list);
+  }
+
+  const strengthSessions =
+    strengthSessionDetail?.map((s) => {
+      const rows = byAct.get(s.garmin_activity_id) ?? [];
+      return {
+        garmin_activity_id: s.garmin_activity_id,
+        workout_name: s.label,
+        activity_name: rows[0]?.activity_name ?? null,
+        dateLabel: format(new Date(s.started_at), "MMM d"),
+        started_at: s.started_at,
+        rows: rows.map((r) => ({
+          exercise_name: r.exercise_name,
+          set_number: r.set_number,
+          reps: r.reps,
+          weight_lbs: r.weight_lbs,
+          volume_lbs:
+            r.reps != null && r.weight_lbs != null
+              ? Math.round(r.reps * Number(r.weight_lbs) * 10) / 10
+              : null,
+        })),
+      };
+    }) ?? [];
+
+  const strengthVolumeBySession = strengthSessions
+    .map((s) => ({
+      dateLabel: s.dateLabel,
+      workout: s.workout_name,
+      volumeLbs: s.rows.reduce((acc, r) => acc + (r.volume_lbs ?? 0), 0),
+    }))
+    .slice(0, 12)
+    .reverse();
+
   const garmin =
     hasRealData && profile?.garmin_last_sync_at
       ? parseWellness(profile.garmin_wellness)
@@ -282,6 +356,8 @@ export async function loadDashboardData(userId: string): Promise<DashboardViewMo
       wkgTrend: showCycling ? wkgPoints : placeholderCycling.wkgTrend,
     },
     strength: strengthOut,
+    strengthSessions,
+    strengthVolumeBySession,
     garmin,
     nutrition: {
       caloriesAvg: nutritionPlaceholder.caloriesAvg,

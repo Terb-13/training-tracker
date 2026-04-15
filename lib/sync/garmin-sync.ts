@@ -4,6 +4,11 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { decryptJson, encryptJson } from "@/lib/crypto/credentials";
 import type { Database, Json } from "@/types/database";
+import {
+  mapWorkoutName,
+  parseStrengthGarminActivity,
+  volumeKgFromRows,
+} from "@/lib/sync/parse-strength";
 
 type Profile = Database["public"]["Tables"]["profiles"]["Row"];
 
@@ -23,15 +28,13 @@ type GarminActivity = {
   elevationGain: number;
   avgPower: unknown;
   maxPower: unknown;
+  description?: unknown;
+  summarizedExerciseSets?: unknown;
+  totalReps?: unknown;
+  totalSets?: unknown;
+  activeSets?: unknown;
+  splitSummaries?: unknown;
 };
-
-function mapStrengthLabel(name: string): string {
-  const n = name.toLowerCase();
-  if (n.includes("chest") || n.includes("tricep") || n.includes("push")) return "Chest/Triceps";
-  if (n.includes("back") || n.includes("bicep") || n.includes("pull")) return "Back/Biceps";
-  if (n.includes("shoulder") || n.includes("core") || n.includes("rotator")) return "Shoulders/Core";
-  return "Strength (split)";
-}
 
 function classifySport(a: GarminActivity): "cycling" | "strength" | "other" {
   const key = a.activityType?.typeKey?.toLowerCase() ?? "";
@@ -128,24 +131,78 @@ export async function runGarminSync(
     }
 
     const strength = recent.filter(isStrengthActivity);
-    const strengthRows = strength.map((a) => {
-      const vol = Math.round((a.duration / 60) * 8);
+
+    type ParsedBundle = {
+      activity: GarminActivity;
+      rows: Database["public"]["Tables"]["strength_exercises"]["Insert"][];
+    };
+    const bundles: ParsedBundle[] = [];
+    const batchSize = 5;
+    for (let i = 0; i < strength.length; i += batchSize) {
+      const batch = strength.slice(i, i + batchSize);
+      const results = await Promise.all(
+        batch.map(async (a) => {
+          let detail: Record<string, unknown> | null = null;
+          try {
+            const d = (await gc.getActivity({ activityId: a.activityId })) as unknown;
+            if (d && typeof d === "object") detail = d as Record<string, unknown>;
+          } catch {
+            detail = null;
+          }
+          const merged: Record<string, unknown> = {
+            ...(a as unknown as Record<string, unknown>),
+            ...(detail ?? {}),
+          };
+          const rows = parseStrengthGarminActivity(merged, userId, a.activityId, a.activityName || "Strength");
+          return { activity: a, rows };
+        }),
+      );
+      bundles.push(...results);
+    }
+
+    const strengthRows = bundles.map(({ activity: a, rows }) => {
+      const fromSets = volumeKgFromRows(rows);
+      const vol = fromSets ?? Math.round((a.duration / 60) * 8);
       return {
         user_id: userId,
         garmin_activity_id: a.activityId,
-        label: mapStrengthLabel(a.activityName || "Strength"),
+        label: mapWorkoutName(a.activityName || "Strength"),
         started_at: parseActivityDate(a).toISOString(),
         duration_sec: Math.round(a.duration ?? 0),
         volume_kg: vol,
-        exercise_summary: { name: a.activityName, typeKey: a.activityType?.typeKey } as Json,
+        exercise_summary: {
+          name: a.activityName,
+          typeKey: a.activityType?.typeKey,
+          setRows: rows.length,
+        } as Json,
       };
     });
+
+    const strengthIds = strength.map((a) => a.activityId);
+    const flatExercises = bundles.flatMap((b) => b.rows);
 
     if (strengthRows.length) {
       const { error: sErr } = await supabase.from("strength_sessions").upsert(strengthRows, {
         onConflict: "user_id,garmin_activity_id",
       });
       if (sErr) throw new Error(sErr.message);
+    }
+
+    if (strengthIds.length) {
+      const { error: delEx } = await supabase
+        .from("strength_exercises")
+        .delete()
+        .eq("user_id", userId)
+        .in("garmin_activity_id", strengthIds);
+      if (delEx) throw new Error(delEx.message);
+    }
+
+    if (flatExercises.length) {
+      for (let j = 0; j < flatExercises.length; j += 200) {
+        const chunk = flatExercises.slice(j, j + 200);
+        const { error: insEx } = await supabase.from("strength_exercises").insert(chunk);
+        if (insEx) throw new Error(insEx.message);
+      }
     }
 
     const bodyRows: Database["public"]["Tables"]["body_composition"]["Insert"][] = [];
@@ -269,6 +326,7 @@ export async function runGarminSync(
       counts: {
         activities: activityRows.length,
         strength: strengthRows.length,
+        strength_exercises: flatExercises.length,
         weights: bodyRows.length,
         sleepHours: Math.round(sleepHours * 10) / 10,
         restingHr,

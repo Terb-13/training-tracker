@@ -189,6 +189,51 @@ export interface Database {
         };
         Relationships: [];
       };
+      strength_exercises: {
+        Row: {
+          id: string;
+          user_id: string;
+          garmin_activity_id: number;
+          activity_name: string | null;
+          workout_name: string;
+          exercise_name: string;
+          set_number: number;
+          reps: number | null;
+          weight_lbs: number | null;
+          sort_index: number;
+          raw: Json | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          garmin_activity_id: number;
+          activity_name?: string | null;
+          workout_name: string;
+          exercise_name: string;
+          set_number?: number;
+          reps?: number | null;
+          weight_lbs?: number | null;
+          sort_index?: number;
+          raw?: Json | null;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          user_id?: string;
+          garmin_activity_id?: number;
+          activity_name?: string | null;
+          workout_name?: string;
+          exercise_name?: string;
+          set_number?: number;
+          reps?: number | null;
+          weight_lbs?: number | null;
+          sort_index?: number;
+          raw?: Json | null;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
       daily_deficit: {
         Row: {
           id: string;

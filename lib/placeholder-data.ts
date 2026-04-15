@@ -43,19 +43,19 @@ export const cyclingWeek = {
 
 export const garminStrengthSessions = [
   {
-    label: "Chest/Triceps",
+    label: "Chest & Triceps",
     last: "Apr 11",
     durationMin: 48,
     loadHint: "32 lb DB — press + dips pattern",
   },
   {
-    label: "Back/Biceps",
+    label: "Back & Biceps",
     last: "Apr 9",
     durationMin: 52,
     loadHint: "Rows + curls — Garmin strength",
   },
   {
-    label: "Shoulders/Core",
+    label: "Shoulders & Core",
     last: "Apr 13",
     durationMin: 44,
     loadHint: "Arnold + planks — morning slot",

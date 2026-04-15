@@ -309,7 +309,7 @@ export function TrainingDashboard({
         <TabsContent value="strength" className="space-y-4">
           <div className="flex items-center gap-2 text-sm text-[var(--muted-foreground)]">
             <Dumbbell className="h-4 w-4" />
-            Garmin strength — Chest/Triceps, Back/Biceps, Shoulders/Core
+            Garmin strength — Chest & Triceps, Back & Biceps, Shoulders & Core
           </div>
           <div className="grid gap-4 md:grid-cols-3">
             {data.strength.map((s) => (
@@ -333,6 +333,102 @@ export function TrainingDashboard({
                 </CardContent>
               </Card>
             ))}
+          </div>
+
+          {data.strengthVolumeBySession.length > 0 ? (
+            <ChartCard
+              title="Session volume (reps × weight)"
+              description="Lb-equivalent volume when weights are recorded in Garmin"
+            >
+              <ResponsiveContainer width="100%" height={260}>
+                <BarChart data={data.strengthVolumeBySession}>
+                  <CartesianGrid strokeDasharray="3 3" className="stroke-[var(--border)]" />
+                  <XAxis
+                    dataKey="dateLabel"
+                    tick={{ fontSize: 10 }}
+                    interval={0}
+                    angle={-25}
+                    textAnchor="end"
+                    height={56}
+                  />
+                  <YAxis tick={{ fontSize: 11 }} />
+                  <Tooltip
+                    contentStyle={{
+                      background: "var(--card)",
+                      border: "1px solid var(--border)",
+                      borderRadius: 8,
+                    }}
+                    formatter={(value) => {
+                      const n = typeof value === "number" ? value : Number(value);
+                      return [
+                        Number.isFinite(n) ? `${Math.round(n).toLocaleString()} lb·reps` : "",
+                        "Volume",
+                      ];
+                    }}
+                    labelFormatter={(_, payload) => {
+                      const item = Array.isArray(payload) ? payload[0] : undefined;
+                      const p = item?.payload as { workout?: string; dateLabel?: string } | undefined;
+                      return p ? `${p.dateLabel ?? ""} · ${p.workout ?? ""}` : "";
+                    }}
+                  />
+                  <Bar dataKey="volumeLbs" fill="#6366f1" radius={[4, 4, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </ChartCard>
+          ) : null}
+
+          <div className="space-y-4">
+            <h3 className="text-sm font-semibold text-[var(--foreground)]">Sets & weights</h3>
+            {data.strengthSessions.length === 0 ? (
+              <p className="text-sm text-[var(--muted-foreground)]">
+                Run a Garmin sync after your next dumbbell session to populate per-exercise sets.
+              </p>
+            ) : (
+              data.strengthSessions.map((session) => (
+                <Card key={session.garmin_activity_id}>
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-base">{session.workout_name}</CardTitle>
+                    <CardDescription>
+                      {session.dateLabel}
+                      {session.activity_name ? ` · ${session.activity_name}` : ""}
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="overflow-x-auto">
+                    <table className="w-full min-w-[480px] border-collapse text-sm">
+                      <thead>
+                        <tr className="border-b border-[var(--border)] text-left text-[var(--muted-foreground)]">
+                          <th className="py-2 pr-3 font-medium">Exercise</th>
+                          <th className="py-2 pr-3 font-medium">Set</th>
+                          <th className="py-2 pr-3 font-medium">Reps</th>
+                          <th className="py-2 pr-3 font-medium">Weight (lb)</th>
+                          <th className="py-2 font-medium">Volume</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {session.rows.map((row, idx) => (
+                          <tr
+                            key={`${session.garmin_activity_id}-${idx}`}
+                            className="border-b border-[var(--border)]/60"
+                          >
+                            <td className="py-2 pr-3">{row.exercise_name}</td>
+                            <td className="py-2 pr-3">{row.set_number}</td>
+                            <td className="py-2 pr-3">{row.reps ?? "—"}</td>
+                            <td className="py-2 pr-3">
+                              {row.weight_lbs != null ? Math.round(Number(row.weight_lbs) * 10) / 10 : "—"}
+                            </td>
+                            <td className="py-2">
+                              {row.volume_lbs != null
+                                ? Math.round(row.volume_lbs).toLocaleString()
+                                : "—"}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </CardContent>
+                </Card>
+              ))
+            )}
           </div>
         </TabsContent>
 
