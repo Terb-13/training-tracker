@@ -24,7 +24,7 @@ type SavedProfileRow = Pick<
   | "updated_at"
 >;
 
-/** Update by `id`, or insert if no row was updated. No PostgREST `.upsert()` / ON CONFLICT. */
+/** Update by `id`, or insert if no row was updated. No PostgREST merge-upsert or ON CONFLICT. */
 async function saveProfileUpdateOrInsert(
   supabase: Awaited<ReturnType<typeof createServerSupabaseClient>>,
   userId: string,

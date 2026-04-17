@@ -1,3 +1,7 @@
+/**
+ * Garmin-related batch writes: delete-then-insert for data tables; profile sync uses UPDATE only.
+ * No PostgREST .upsert / ON CONFLICT (guarded by `npm run check:no-upsert`).
+ */
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import {
