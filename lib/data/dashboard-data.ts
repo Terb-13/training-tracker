@@ -110,13 +110,29 @@ function isCyclingDb(a: {
   return s.includes("cycling") || s.includes("bike") || s.includes("peloton");
 }
 
+function numOrNull(v: unknown): number | null {
+  if (typeof v === "number" && Number.isFinite(v)) return v;
+  if (typeof v === "string" && v.trim() !== "") {
+    const n = Number.parseFloat(v);
+    if (Number.isFinite(n)) return n;
+  }
+  return null;
+}
+
+/** Prefer typed columns; fall back to raw_data then raw JSONB (Garmin sync stores full sets here). */
+function exerciseJsonBlob(r: StrengthExerciseRow): Record<string, unknown> | null {
+  const rd = r.raw_data;
+  if (rd && typeof rd === "object" && !Array.isArray(rd)) return rd as Record<string, unknown>;
+  if (r.raw && typeof r.raw === "object" && !Array.isArray(r.raw)) return r.raw as Record<string, unknown>;
+  return null;
+}
+
 function strengthRowExtras(r: StrengthExerciseRow): {
   weight_kg: number | null;
   rest_seconds: number | null;
   notes: string | null;
 } {
-  const raw =
-    r.raw && typeof r.raw === "object" && !Array.isArray(r.raw) ? (r.raw as Record<string, unknown>) : null;
+  const raw = exerciseJsonBlob(r);
   const wk = raw?.weight_kg;
   const rs = raw?.rest_seconds;
   const n = raw?.notes;
@@ -124,15 +140,11 @@ function strengthRowExtras(r: StrengthExerciseRow): {
     weight_kg:
       r.weight_kg != null
         ? Number(r.weight_kg)
-        : typeof wk === "number" && Number.isFinite(wk)
-          ? wk
-          : null,
+        : numOrNull(wk),
     rest_seconds:
       r.rest_seconds != null
         ? Number(r.rest_seconds)
-        : typeof rs === "number" && Number.isFinite(rs)
-          ? rs
-          : null,
+        : numOrNull(rs),
     notes:
       r.notes != null && String(r.notes).trim() !== ""
         ? String(r.notes)
@@ -319,19 +331,24 @@ export async function loadDashboardData(userId: string): Promise<DashboardViewMo
         started_at: s.started_at,
         rows: rows.map((r) => {
           const ex = strengthRowExtras(r);
+          const blob = exerciseJsonBlob(r);
+          const reps =
+            r.reps != null ? Number(r.reps) : numOrNull(blob?.reps ?? blob?.repetitions);
+          const weightLbsTyped =
+            r.weight_lbs != null ? Number(r.weight_lbs) : numOrNull(blob?.weight_lbs ?? blob?.weightLbs);
           const lbEquiv =
-            r.weight_lbs != null
-              ? Number(r.weight_lbs)
+            weightLbsTyped != null
+              ? weightLbsTyped
               : ex.weight_kg != null
                 ? ex.weight_kg / 0.453592
                 : null;
           const volLb =
-            r.reps != null && lbEquiv != null ? Math.round(r.reps * lbEquiv * 10) / 10 : null;
+            reps != null && lbEquiv != null ? Math.round(reps * lbEquiv * 10) / 10 : null;
           return {
             exercise_name: r.exercise_name,
             set_number: r.set_number,
-            reps: r.reps,
-            weight_lbs: r.weight_lbs,
+            reps,
+            weight_lbs: weightLbsTyped,
             weight_kg: ex.weight_kg,
             rest_seconds: ex.rest_seconds,
             notes: ex.notes,

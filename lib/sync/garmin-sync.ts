@@ -12,6 +12,7 @@ import {
   encodeFullActivityRawData,
   extractFitFromZipBuffer,
   isStrengthFitSession,
+  jsonSafe,
   mapWorkoutNameFromFitWktName,
   parseGarminActivityFit,
   sessionToActivityFields,
@@ -22,7 +23,11 @@ import {
   parseStrengthGarminActivity,
   volumeKgFromRows,
 } from "@/lib/sync/parse-strength";
-import { insertStrengthExercisesTolerant, replaceActivitiesTolerant } from "@/lib/sync/supabase-tolerant";
+import {
+  insertStrengthExercisesTolerant,
+  replaceActivitiesTolerant,
+  replaceStrengthSessionsTolerant,
+} from "@/lib/sync/supabase-tolerant";
 
 type Profile = Database["public"]["Tables"]["profiles"]["Row"];
 
@@ -244,6 +249,24 @@ export async function runGarminSync(
       const label = parsed?.workoutWktName
         ? mapWorkoutNameFromFitWktName(parsed.workoutWktName)
         : mapWorkoutName(a.activityName || "Strength");
+      const exerciseSummary = {
+        name: a.activityName,
+        typeKey: a.activityType?.typeKey,
+        setRows: rows.length,
+        source: parsed?.strengthRows?.length ? "fit" : "garmin_api",
+      } as Json;
+      const rawData = jsonSafe({
+        garminActivity: a,
+        parsedFit: parsed
+          ? {
+              session: parsed.session,
+              strengthRows: parsed.strengthRows,
+              rawDataFit: parsed.rawDataFit,
+              workoutWktName: parsed.workoutWktName,
+            }
+          : null,
+        exerciseSummary,
+      });
       return {
         user_id: userId,
         garmin_activity_id: a.activityId,
@@ -251,22 +274,18 @@ export async function runGarminSync(
         started_at: fit.start_time_gmt ?? parseActivityDate(a).toISOString(),
         duration_sec: fit.duration_sec ?? Math.round(a.duration ?? 0),
         volume_kg: vol,
-        exercise_summary: {
-          name: a.activityName,
-          typeKey: a.activityType?.typeKey,
-          setRows: rows.length,
-          source: parsed?.strengthRows?.length ? "fit" : "garmin_api",
-        } as Json,
+        exercise_summary: exerciseSummary,
+        raw_data: rawData,
       };
     });
 
     const flatExercises = bundles.flatMap((b) => b.rows);
 
     if (strengthRows.length) {
-      const { error: sErr } = await supabase.from("strength_sessions").upsert(strengthRows, {
-        onConflict: "user_id,garmin_activity_id",
-      });
-      if (sErr) throw new Error(sErr.message);
+      await replaceStrengthSessionsTolerant(
+        supabase,
+        strengthRows.map((r) => ({ ...r }) as Record<string, unknown>),
+      );
     }
 
     if (flatExercises.length) {
@@ -392,10 +411,7 @@ export async function runGarminSync(
     if (pErr) throw new Error(pErr.message);
 
     console.log(
-      "[Garmin sync] OK — activities inserted:",
-      activityRows.length,
-      "strength_exercises inserted:",
-      flatExercises.length,
+      `[Garmin sync] OK — ${activityRows.length} activities, ${flatExercises.length} strength_exercises inserted (raw_data used as fallback)`,
     );
 
     return {

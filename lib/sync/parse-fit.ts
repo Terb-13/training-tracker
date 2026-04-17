@@ -27,7 +27,7 @@ export function encodeGarminActivityRawData(garminApi: unknown, fitPayload: Json
   return encodeFullActivityRawData(garminApi, fitPayload, {});
 }
 
-function jsonSafe(v: unknown): Json {
+export function jsonSafe(v: unknown): Json {
   try {
     return JSON.parse(
       JSON.stringify(v, (_k, x) => {

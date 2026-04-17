@@ -193,6 +193,7 @@ export interface Database {
           duration_sec: number;
           volume_kg: number | null;
           exercise_summary: Json | null;
+          raw_data: Json | null;
           created_at: string;
         };
         Insert: {
@@ -204,6 +205,7 @@ export interface Database {
           duration_sec: number;
           volume_kg?: number | null;
           exercise_summary?: Json | null;
+          raw_data?: Json | null;
           created_at?: string;
         };
         Update: {
@@ -215,6 +217,7 @@ export interface Database {
           duration_sec?: number;
           volume_kg?: number | null;
           exercise_summary?: Json | null;
+          raw_data?: Json | null;
           created_at?: string;
         };
         Relationships: [];
@@ -235,6 +238,7 @@ export interface Database {
           notes: string | null;
           sort_index: number;
           raw: Json | null;
+          raw_data: Json | null;
           created_at: string;
         };
         Insert: {
@@ -252,6 +256,7 @@ export interface Database {
           notes?: string | null;
           sort_index?: number;
           raw?: Json | null;
+          raw_data?: Json | null;
           created_at?: string;
         };
         Update: {
@@ -269,6 +274,7 @@ export interface Database {
           notes?: string | null;
           sort_index?: number;
           raw?: Json | null;
+          raw_data?: Json | null;
           created_at?: string;
         };
         Relationships: [];
