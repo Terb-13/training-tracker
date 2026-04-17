@@ -28,8 +28,8 @@ import {
   replaceActivitiesTolerant,
   replaceStrengthSessionsTolerant,
   updateProfileGarminTolerant,
-  upsertBodyCompositionTolerant,
-  upsertDailyDeficitTolerant,
+  replaceBodyCompositionTolerant,
+  replaceDailyDeficitTolerant,
 } from "@/lib/sync/supabase-tolerant";
 
 type Profile = Database["public"]["Tables"]["profiles"]["Row"];
@@ -322,7 +322,7 @@ export async function runGarminSync(
     }
 
     if (bodyRows.length) {
-      await upsertBodyCompositionTolerant(
+      await replaceBodyCompositionTolerant(
         supabase,
         bodyRows.map((r) => ({ ...r }) as Record<string, unknown>),
       );
@@ -393,7 +393,7 @@ export async function runGarminSync(
       });
     }
 
-    await upsertDailyDeficitTolerant(
+    await replaceDailyDeficitTolerant(
       supabase,
       deficitRows.map((r) => ({ ...r }) as Record<string, unknown>),
     );
@@ -422,7 +422,7 @@ export async function runGarminSync(
     });
 
     console.log(
-      `[Garmin sync] OK — ${activityRows.length} activities, ${flatExercises.length} strength_exercises, ${deficitRows.length} daily_deficit rows inserted (tolerant mode)`,
+      `[Garmin sync] OK — ${activityRows.length} activities, ${flatExercises.length} strength_exercises, ${deficitRows.length} daily_deficit inserted (delete+insert mode)`,
     );
 
     return {

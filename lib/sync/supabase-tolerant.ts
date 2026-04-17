@@ -29,7 +29,12 @@ export function extractMissingColumnName(message: string): string | null {
  */
 async function insertRowsAdaptive(
   supabase: SupabaseClient,
-  table: "activities" | "strength_sessions" | "strength_exercises",
+  table:
+    | "activities"
+    | "strength_sessions"
+    | "strength_exercises"
+    | "body_composition"
+    | "daily_deficit",
   rows: Record<string, unknown>[],
 ): Promise<void> {
   if (!rows.length) return;
@@ -66,44 +71,48 @@ async function insertRowsAdaptive(
   throw new Error(`${table} insert: exceeded adaptive retries`);
 }
 
-async function upsertRowsAdaptive(
+/** Delete existing rows for user + dates, then insert (no ON CONFLICT). */
+export async function replaceBodyCompositionTolerant(
   supabase: SupabaseClient,
-  table: "body_composition" | "daily_deficit",
   rows: Record<string, unknown>[],
-  onConflict: string,
 ): Promise<void> {
   if (!rows.length) return;
-  let current = rows.map((r) => ({ ...r }));
-  for (let attempt = 0; attempt < 48; attempt++) {
-    const { error } = await supabase.from(table).upsert(current as never, { onConflict });
-    if (!error) return;
-    const col = extractMissingColumnName(error.message);
-    if (!col) throw new Error(error.message);
-    current = current.map((r) => {
-      const next = { ...r };
-      delete next[col];
-      return next;
-    });
+  const userId = rows[0].user_id as string | undefined;
+  if (!userId || rows.some((r) => r.user_id !== userId)) {
+    throw new Error("replaceBodyCompositionTolerant: all rows must share the same user_id");
   }
-  throw new Error(`${table} upsert: exceeded adaptive retries`);
-}
+  const dates = [...new Set(rows.map((r) => String(r.date)))];
+  const { error: delErr } = await supabase
+    .from("body_composition")
+    .delete()
+    .eq("user_id", userId)
+    .in("date", dates);
+  if (delErr) throw new Error(delErr.message);
 
-export async function upsertBodyCompositionTolerant(
-  supabase: SupabaseClient,
-  rows: Record<string, unknown>[],
-): Promise<void> {
-  if (!rows.length) return;
   const sanitized = rows.map((r) => sanitizeBodyCompositionInsert({ ...r }));
-  await upsertRowsAdaptive(supabase, "body_composition", sanitized, "user_id,date");
+  await insertRowsAdaptive(supabase, "body_composition", sanitized);
 }
 
-export async function upsertDailyDeficitTolerant(
+/** Delete existing rows for user + dates, then insert (no ON CONFLICT). */
+export async function replaceDailyDeficitTolerant(
   supabase: SupabaseClient,
   rows: Record<string, unknown>[],
 ): Promise<void> {
   if (!rows.length) return;
+  const userId = rows[0].user_id as string | undefined;
+  if (!userId || rows.some((r) => r.user_id !== userId)) {
+    throw new Error("replaceDailyDeficitTolerant: all rows must share the same user_id");
+  }
+  const dates = [...new Set(rows.map((r) => String(r.date)))];
+  const { error: delErr } = await supabase
+    .from("daily_deficit")
+    .delete()
+    .eq("user_id", userId)
+    .in("date", dates);
+  if (delErr) throw new Error(delErr.message);
+
   const sanitized = rows.map((r) => sanitizeDailyDeficitInsert({ ...r }));
-  await upsertRowsAdaptive(supabase, "daily_deficit", sanitized, "user_id,date");
+  await insertRowsAdaptive(supabase, "daily_deficit", sanitized);
 }
 
 /** Update profile fields allowed on Garmin sync; strips unknown columns until PostgREST accepts. */
