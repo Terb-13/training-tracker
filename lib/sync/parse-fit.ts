@@ -14,8 +14,17 @@ function toIso(d: unknown): string | null {
   return null;
 }
 
+/** Full snapshot: Garmin list/detail object + FIT payload + derived session fields (safe if DB columns are missing). */
+export function encodeFullActivityRawData(
+  garminActivity: unknown,
+  fitPayload: Json | null,
+  derived: Record<string, unknown>,
+): Json {
+  return jsonSafe({ garminApi: garminActivity, fit: fitPayload, derived }) as Json;
+}
+
 export function encodeGarminActivityRawData(garminApi: unknown, fitPayload: Json | null): Json {
-  return jsonSafe({ garminApi, fit: fitPayload }) as Json;
+  return encodeFullActivityRawData(garminApi, fitPayload, {});
 }
 
 function jsonSafe(v: unknown): Json {
@@ -222,11 +231,13 @@ export async function parseGarminActivityFit(buf: Buffer): Promise<ParsedGarminF
           set_number: setNumber,
           reps,
           weight_lbs: lbs,
-          weight_kg: kg,
-          rest_seconds: restSeconds,
-          notes,
           sort_index: sortIndex,
-          raw: jsonSafe(cur),
+          raw: jsonSafe({
+            fitSet: cur,
+            weight_kg: kg,
+            rest_seconds: restSeconds,
+            notes,
+          }),
         });
         sortIndex += 1;
       }

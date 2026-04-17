@@ -50,6 +50,17 @@ function pickWeightUnit(o: Record<string, unknown>): string | null {
   return typeof u === "string" ? u : null;
 }
 
+function mergeStrengthFragment(
+  fragment: unknown,
+  extras: { weight_kg: number | null; rest_seconds: number | null; notes: string | null },
+): Json {
+  const base =
+    fragment && typeof fragment === "object" && !Array.isArray(fragment)
+      ? { ...(fragment as Record<string, unknown>) }
+      : {};
+  return { ...base, ...extras } as Json;
+}
+
 /**
  * Garmin Connect exposes `summarizedExerciseSets` as vendor-specific JSON.
  * We walk common shapes defensively and fall back to lap summaries / session totals.
@@ -69,6 +80,7 @@ function parseSummarizedExerciseSets(
     sortIndex: number,
     fragment: unknown,
   ) => {
+    const kg = weightLbs != null ? Math.round(weightLbs * LB_TO_KG * 1000) / 1000 : null;
     out.push({
       activity_name: activityName,
       workout_name: workoutName,
@@ -76,11 +88,8 @@ function parseSummarizedExerciseSets(
       set_number: setNumber,
       reps,
       weight_lbs: weightLbs,
-      weight_kg: weightLbs != null ? Math.round(weightLbs * LB_TO_KG * 1000) / 1000 : null,
-      rest_seconds: null,
-      notes: null,
       sort_index: sortIndex,
-      raw: (fragment ?? null) as Json,
+      raw: mergeStrengthFragment(fragment, { weight_kg: kg, rest_seconds: null, notes: null }),
     });
   };
 
@@ -144,11 +153,8 @@ function parseSplitSummaries(
       set_number: i + 1,
       reps,
       weight_lbs: null,
-      weight_kg: null,
-      rest_seconds: null,
-      notes: null,
       sort_index: baseSort + i,
-      raw: sp as Json,
+      raw: mergeStrengthFragment(sp, { weight_kg: null, rest_seconds: null, notes: null }),
     });
   });
   return out;
@@ -170,28 +176,37 @@ function sessionFallbackRow(
       set_number: 1,
       reps: totalReps,
       weight_lbs: null,
-      weight_kg: null,
-      rest_seconds: null,
-      notes: null,
       sort_index: 0,
-      raw: {
-        totalReps: merged.totalReps ?? null,
-        totalSets: merged.totalSets ?? null,
-        activeSets: merged.activeSets ?? null,
-      } as Json,
+      raw: mergeStrengthFragment(
+        {
+          totalReps: merged.totalReps ?? null,
+          totalSets: merged.totalSets ?? null,
+          activeSets: merged.activeSets ?? null,
+        },
+        { weight_kg: null, rest_seconds: null, notes: null },
+      ),
     },
   ];
 }
 
 /** Sum volume in kg from parsed rows (reps × weight), when weights exist. */
+function weightKgFromStrengthRow(r: Pick<StrengthInsert, "weight_lbs" | "weight_kg" | "raw">): number | null {
+  if (r.weight_kg != null && Number.isFinite(Number(r.weight_kg))) return Number(r.weight_kg);
+  if (r.weight_lbs != null && Number.isFinite(Number(r.weight_lbs))) return Number(r.weight_lbs) * LB_TO_KG;
+  const raw = r.raw && typeof r.raw === "object" && !Array.isArray(r.raw) ? (r.raw as Record<string, unknown>) : null;
+  const wk = raw?.weight_kg;
+  if (typeof wk === "number" && Number.isFinite(wk)) return wk;
+  return null;
+}
+
 export function volumeKgFromRows(
-  rows: Pick<StrengthInsert, "reps" | "weight_lbs" | "weight_kg">[],
+  rows: Pick<StrengthInsert, "reps" | "weight_lbs" | "weight_kg" | "raw">[],
 ): number | null {
   if (!rows.length) return null;
   let sumKg = 0;
   let any = false;
   for (const r of rows) {
-    const kg = r.weight_kg ?? (r.weight_lbs != null ? r.weight_lbs * LB_TO_KG : null);
+    const kg = weightKgFromStrengthRow(r);
     if (r.reps != null && kg != null) {
       any = true;
       sumKg += r.reps * kg;

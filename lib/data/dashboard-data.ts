@@ -92,11 +92,54 @@ function isCyclingDb(a: {
   activity_name: string | null;
   fit_sub_sport?: string | null;
   fit_sport?: string | null;
+  raw_data?: unknown;
+  raw?: unknown;
 }): boolean {
   const fit = `${a.fit_sport ?? ""} ${a.fit_sub_sport ?? ""}`.toLowerCase();
   if (fit.includes("cycling") || fit.includes("indoorcycling")) return true;
+  const blob = (a.raw_data ?? a.raw) as Record<string, unknown> | null | undefined;
+  const derived =
+    blob && typeof blob === "object" && blob.derived && typeof blob.derived === "object"
+      ? (blob.derived as Record<string, unknown>)
+      : null;
+  if (derived) {
+    const dfit = `${derived.fit_sport ?? ""} ${derived.fit_sub_sport ?? ""}`.toLowerCase();
+    if (dfit.includes("cycling") || dfit.includes("indoorcycling")) return true;
+  }
   const s = `${a.sport_type_key ?? ""} ${a.activity_type ?? ""} ${a.activity_name ?? ""}`.toLowerCase();
   return s.includes("cycling") || s.includes("bike") || s.includes("peloton");
+}
+
+function strengthRowExtras(r: StrengthExerciseRow): {
+  weight_kg: number | null;
+  rest_seconds: number | null;
+  notes: string | null;
+} {
+  const raw =
+    r.raw && typeof r.raw === "object" && !Array.isArray(r.raw) ? (r.raw as Record<string, unknown>) : null;
+  const wk = raw?.weight_kg;
+  const rs = raw?.rest_seconds;
+  const n = raw?.notes;
+  return {
+    weight_kg:
+      r.weight_kg != null
+        ? Number(r.weight_kg)
+        : typeof wk === "number" && Number.isFinite(wk)
+          ? wk
+          : null,
+    rest_seconds:
+      r.rest_seconds != null
+        ? Number(r.rest_seconds)
+        : typeof rs === "number" && Number.isFinite(rs)
+          ? rs
+          : null,
+    notes:
+      r.notes != null && String(r.notes).trim() !== ""
+        ? String(r.notes)
+        : typeof n === "string"
+          ? n
+          : null,
+  };
 }
 
 function parseWellness(raw: ProfileRow["garmin_wellness"]): GarminWellness {
@@ -275,11 +318,12 @@ export async function loadDashboardData(userId: string): Promise<DashboardViewMo
         dateLabel: format(new Date(s.started_at), "MMM d"),
         started_at: s.started_at,
         rows: rows.map((r) => {
+          const ex = strengthRowExtras(r);
           const lbEquiv =
             r.weight_lbs != null
               ? Number(r.weight_lbs)
-              : r.weight_kg != null
-                ? Number(r.weight_kg) / 0.453592
+              : ex.weight_kg != null
+                ? ex.weight_kg / 0.453592
                 : null;
           const volLb =
             r.reps != null && lbEquiv != null ? Math.round(r.reps * lbEquiv * 10) / 10 : null;
@@ -288,9 +332,9 @@ export async function loadDashboardData(userId: string): Promise<DashboardViewMo
             set_number: r.set_number,
             reps: r.reps,
             weight_lbs: r.weight_lbs,
-            weight_kg: r.weight_kg,
-            rest_seconds: r.rest_seconds,
-            notes: r.notes,
+            weight_kg: ex.weight_kg,
+            rest_seconds: ex.rest_seconds,
+            notes: ex.notes,
             volume_lbs: volLb,
           };
         }),

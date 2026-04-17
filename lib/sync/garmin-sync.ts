@@ -9,7 +9,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { decryptJson, encryptJson } from "@/lib/crypto/credentials";
 import type { Database, Json } from "@/types/database";
 import {
-  encodeGarminActivityRawData,
+  encodeFullActivityRawData,
   extractFitFromZipBuffer,
   isStrengthFitSession,
   mapWorkoutNameFromFitWktName,
@@ -22,6 +22,7 @@ import {
   parseStrengthGarminActivity,
   volumeKgFromRows,
 } from "@/lib/sync/parse-strength";
+import { insertStrengthExercisesTolerant, upsertActivitiesTolerant } from "@/lib/sync/supabase-tolerant";
 
 type Profile = Database["public"]["Tables"]["profiles"]["Row"];
 
@@ -156,9 +157,10 @@ export async function runGarminSync(
       for (const { id, parsed } of batchFit) fitById.set(id, parsed);
     }
 
-    const activityRows = recent.map((a) => {
+    const activityRows: Record<string, unknown>[] = recent.map((a) => {
       const parsed = fitById.get(a.activityId) ?? null;
       const fit = sessionToActivityFields(parsed?.session ?? null);
+      const rawPayload = encodeFullActivityRawData(a, parsed?.rawDataFit ?? null, fit as Record<string, unknown>);
       return {
         user_id: userId,
         garmin_activity_id: a.activityId,
@@ -169,7 +171,7 @@ export async function runGarminSync(
         distance_m: fit.distance_m ?? a.distance ?? null,
         calories: fit.calories ?? a.calories ?? null,
         avg_hr: fit.avg_hr ?? a.averageHR ?? null,
-        max_hr: fit.max_hr ?? null,
+        max_hr: fit.max_hr,
         max_power: fit.max_power ?? (typeof a.maxPower === "number" ? a.maxPower : null),
         avg_power: fit.avg_power ?? (typeof a.avgPower === "number" ? a.avgPower : null),
         elevation_gain_m: fit.elevation_gain_m ?? a.elevationGain ?? null,
@@ -183,15 +185,12 @@ export async function runGarminSync(
         total_descent_m: fit.total_descent_m,
         num_laps: fit.num_laps,
         total_timer_time_sec: fit.total_timer_time_sec,
-        raw_data: encodeGarminActivityRawData(a, parsed?.rawDataFit ?? null),
+        raw_data: rawPayload,
       };
     });
 
     if (activityRows.length) {
-      const { error: actErr } = await supabase.from("activities").upsert(activityRows, {
-        onConflict: "user_id,garmin_activity_id",
-      });
-      if (actErr) throw new Error(actErr.message);
+      await upsertActivitiesTolerant(supabase, activityRows);
     }
 
     const strength = recent.filter((a) => shouldSyncStrengthDetail(a, fitById.get(a.activityId) ?? null));
@@ -281,11 +280,10 @@ export async function runGarminSync(
     }
 
     if (flatExercises.length) {
-      for (let j = 0; j < flatExercises.length; j += 200) {
-        const chunk = flatExercises.slice(j, j + 200);
-        const { error: insEx } = await supabase.from("strength_exercises").insert(chunk);
-        if (insEx) throw new Error(insEx.message);
-      }
+      await insertStrengthExercisesTolerant(
+        supabase,
+        flatExercises.map((r) => ({ ...r }) as Record<string, unknown>),
+      );
     }
 
     const bodyRows: Database["public"]["Tables"]["body_composition"]["Insert"][] = [];
@@ -402,6 +400,13 @@ export async function runGarminSync(
       })
       .eq("id", userId);
     if (pErr) throw new Error(pErr.message);
+
+    console.log(
+      "[Garmin sync] OK — activities upserted:",
+      activityRows.length,
+      "strength_exercises inserted:",
+      flatExercises.length,
+    );
 
     return {
       ok: true,
