@@ -393,9 +393,12 @@ export async function runGarminSync(
       });
     }
 
-    await replaceDailyDeficitTolerant(
+    const deficitInserted = await replaceDailyDeficitTolerant(
       supabase,
       deficitRows.map((r) => ({ ...r }) as Record<string, unknown>),
+    );
+    console.log(
+      `[Garmin sync] daily_deficit — deleted old rows, inserted ${deficitInserted} new rows`,
     );
 
     const exported = gc.exportToken();
@@ -422,7 +425,7 @@ export async function runGarminSync(
     });
 
     console.log(
-      `[Garmin sync] OK — ${activityRows.length} activities, ${flatExercises.length} strength_exercises, ${deficitRows.length} daily_deficit inserted (delete+insert mode)`,
+      `[Garmin sync] OK — ${activityRows.length} activities, ${flatExercises.length} strength_exercises, ${deficitInserted} daily_deficit inserted (delete+insert mode)`,
     );
 
     return {
@@ -432,7 +435,7 @@ export async function runGarminSync(
         activities: activityRows.length,
         strength: strengthRows.length,
         strength_exercises: flatExercises.length,
-        daily_deficit: deficitRows.length,
+        daily_deficit: deficitInserted,
         weights: bodyRows.length,
         sleepHours: Math.round(sleepHours * 10) / 10,
         restingHr,

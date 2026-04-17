@@ -97,26 +97,60 @@ export async function replaceBodyCompositionTolerant(
   await insertRowsAdaptive(supabase, "body_composition", sanitized);
 }
 
-/** Delete existing rows for user + dates, then insert (no ON CONFLICT). */
+/** Normalize to YYYY-MM-DD so DELETE and INSERT match the same key. */
+function normalizeIsoDate(d: unknown): string {
+  if (d instanceof Date && !Number.isNaN(d.getTime())) return d.toISOString().slice(0, 10);
+  const s = String(d).trim();
+  return s.length >= 10 ? s.slice(0, 10) : s;
+}
+
+/** Last row wins if the batch ever contains the same calendar date twice. */
+function dedupeDailyDeficitRows(rows: Record<string, unknown>[]): Record<string, unknown>[] {
+  const byDate = new Map<string, Record<string, unknown>>();
+  for (const r of rows) {
+    const key = normalizeIsoDate(r.date);
+    byDate.set(key, { ...r, date: key });
+  }
+  return [...byDate.values()].sort((a, b) => String(a.date).localeCompare(String(b.date)));
+}
+
+/**
+ * Delete every existing row for this user on those calendar dates (and the date range),
+ * then insert — avoids duplicate key on (user_id, date) or legacy UNIQUE(date).
+ */
 export async function replaceDailyDeficitTolerant(
   supabase: SupabaseClient,
   rows: Record<string, unknown>[],
-): Promise<void> {
-  if (!rows.length) return;
+): Promise<number> {
+  if (!rows.length) return 0;
   const userId = rows[0].user_id as string | undefined;
   if (!userId || rows.some((r) => r.user_id !== userId)) {
     throw new Error("replaceDailyDeficitTolerant: all rows must share the same user_id");
   }
-  const dates = [...new Set(rows.map((r) => String(r.date)))];
-  const { error: delErr } = await supabase
+
+  const deduped = dedupeDailyDeficitRows(rows);
+  const dates = deduped.map((r) => String(r.date));
+  const minD = dates[0];
+  const maxD = dates[dates.length - 1];
+
+  const { error: delIn } = await supabase
     .from("daily_deficit")
     .delete()
     .eq("user_id", userId)
     .in("date", dates);
-  if (delErr) throw new Error(delErr.message);
+  if (delIn) throw new Error(delIn.message);
 
-  const sanitized = rows.map((r) => sanitizeDailyDeficitInsert({ ...r }));
+  const { error: delRange } = await supabase
+    .from("daily_deficit")
+    .delete()
+    .eq("user_id", userId)
+    .gte("date", minD)
+    .lte("date", maxD);
+  if (delRange) throw new Error(delRange.message);
+
+  const sanitized = deduped.map((r) => sanitizeDailyDeficitInsert({ ...r }));
   await insertRowsAdaptive(supabase, "daily_deficit", sanitized);
+  return sanitized.length;
 }
 
 /** Update profile fields allowed on Garmin sync; strips unknown columns until PostgREST accepts. */
