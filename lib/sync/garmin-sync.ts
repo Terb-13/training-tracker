@@ -22,7 +22,7 @@ import {
   parseStrengthGarminActivity,
   volumeKgFromRows,
 } from "@/lib/sync/parse-strength";
-import { insertStrengthExercisesTolerant, upsertActivitiesTolerant } from "@/lib/sync/supabase-tolerant";
+import { insertStrengthExercisesTolerant, replaceActivitiesTolerant } from "@/lib/sync/supabase-tolerant";
 
 type Profile = Database["public"]["Tables"]["profiles"]["Row"];
 
@@ -190,7 +190,7 @@ export async function runGarminSync(
     });
 
     if (activityRows.length) {
-      await upsertActivitiesTolerant(supabase, activityRows);
+      await replaceActivitiesTolerant(supabase, activityRows);
     }
 
     const strength = recent.filter((a) => shouldSyncStrengthDetail(a, fitById.get(a.activityId) ?? null));
@@ -260,7 +260,6 @@ export async function runGarminSync(
       };
     });
 
-    const strengthIds = strength.map((a) => a.activityId);
     const flatExercises = bundles.flatMap((b) => b.rows);
 
     if (strengthRows.length) {
@@ -268,15 +267,6 @@ export async function runGarminSync(
         onConflict: "user_id,garmin_activity_id",
       });
       if (sErr) throw new Error(sErr.message);
-    }
-
-    if (strengthIds.length) {
-      const { error: delEx } = await supabase
-        .from("strength_exercises")
-        .delete()
-        .eq("user_id", userId)
-        .in("garmin_activity_id", strengthIds);
-      if (delEx) throw new Error(delEx.message);
     }
 
     if (flatExercises.length) {
@@ -402,7 +392,7 @@ export async function runGarminSync(
     if (pErr) throw new Error(pErr.message);
 
     console.log(
-      "[Garmin sync] OK — activities upserted:",
+      "[Garmin sync] OK — activities inserted:",
       activityRows.length,
       "strength_exercises inserted:",
       flatExercises.length,

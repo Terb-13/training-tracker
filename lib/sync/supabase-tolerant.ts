@@ -16,19 +16,30 @@ export function extractMissingColumnName(message: string): string | null {
 }
 
 /**
- * Upsert activities until unknown columns are removed or raw_data/raw is swapped.
- * Extended metrics should live under raw_data (or raw) JSON; top-level keys are best-effort.
+ * Replace activities for the given Garmin IDs: delete existing rows, then insert.
+ * Avoids ON CONFLICT (requires a matching unique constraint). Column tolerance matches
+ * older schemas (raw_data vs raw, strip unknown columns).
  */
-export async function upsertActivitiesTolerant(
+export async function replaceActivitiesTolerant(
   supabase: SupabaseClient,
   rows: Record<string, unknown>[],
 ): Promise<void> {
   if (!rows.length) return;
+  const userId = rows[0].user_id as string | undefined;
+  if (!userId || rows.some((r) => r.user_id !== userId)) {
+    throw new Error("replaceActivitiesTolerant: all rows must share the same user_id");
+  }
+  const garminIds = [...new Set(rows.map((r) => r.garmin_activity_id as number))];
+  const { error: delErr } = await supabase
+    .from("activities")
+    .delete()
+    .eq("user_id", userId)
+    .in("garmin_activity_id", garminIds);
+  if (delErr) throw new Error(delErr.message);
+
   let current = rows.map((r) => ({ ...r }));
   for (let attempt = 0; attempt < 48; attempt++) {
-    const { error } = await supabase.from("activities").upsert(current as never, {
-      onConflict: "user_id,garmin_activity_id",
-    });
+    const { error } = await supabase.from("activities").insert(current as never);
     if (!error) return;
     const col = extractMissingColumnName(error.message);
     if (!col) throw new Error(error.message);
@@ -52,7 +63,7 @@ export async function upsertActivitiesTolerant(
       return next;
     });
   }
-  throw new Error("activities upsert: exceeded retries resolving schema columns");
+  throw new Error("activities insert: exceeded retries resolving schema columns");
 }
 
 export async function insertStrengthExercisesTolerant(
@@ -60,6 +71,18 @@ export async function insertStrengthExercisesTolerant(
   rows: Record<string, unknown>[],
 ): Promise<void> {
   if (!rows.length) return;
+  const userId = rows[0].user_id as string | undefined;
+  if (!userId || rows.some((r) => r.user_id !== userId)) {
+    throw new Error("insertStrengthExercisesTolerant: all rows must share the same user_id");
+  }
+  const garminIds = [...new Set(rows.map((r) => Number(r.garmin_activity_id)))];
+  const { error: delErr } = await supabase
+    .from("strength_exercises")
+    .delete()
+    .eq("user_id", userId)
+    .in("garmin_activity_id", garminIds);
+  if (delErr) throw new Error(delErr.message);
+
   for (let j = 0; j < rows.length; j += 200) {
     let chunk = rows.slice(j, j + 200).map((r) => ({ ...r }));
     for (let attempt = 0; ; attempt++) {
