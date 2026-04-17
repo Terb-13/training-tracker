@@ -88,6 +88,7 @@ function parseSummarizedExerciseSets(
       set_number: setNumber,
       reps,
       weight_lbs: weightLbs,
+      weight_kg: kg,
       sort_index: sortIndex,
       raw: mergeStrengthFragment(fragment, { weight_kg: kg, rest_seconds: null, notes: null }),
     });

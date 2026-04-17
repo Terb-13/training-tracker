@@ -14,7 +14,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { Activity, Dumbbell, Moon, Settings, Utensils } from "lucide-react";
+import { Activity, ChevronDown, ChevronRight, Dumbbell, Moon, Settings, Target, Utensils } from "lucide-react";
 
 import { buildWeeklyGrokPayload } from "@/lib/placeholder-data";
 import type { DashboardViewModel } from "@/lib/data/dashboard-data";
@@ -44,6 +44,7 @@ export function TrainingDashboard({
   const [familyLoad, setFamilyLoad] = useState([55]);
   const [workLoad, setWorkLoad] = useState([48]);
   const [grokOpen, setGrokOpen] = useState(false);
+  const [expandedStrengthKey, setExpandedStrengthKey] = useState<string | null>(null);
 
   const currentWeight = data.weightSeries[data.weightSeries.length - 1]?.weight ?? 204.2;
   const weeklyLoss = data.weeklyLossLb;
@@ -307,11 +308,34 @@ export function TrainingDashboard({
         </TabsContent>
 
         <TabsContent value="strength" className="space-y-4">
-          <div className="flex items-center gap-2 text-sm text-[var(--muted-foreground)]">
-            <Dumbbell className="h-4 w-4" />
-            Garmin strength — Chest & Triceps, Back & Biceps, Shoulders & Core
+          <div className="flex flex-wrap items-center gap-2 text-sm text-[var(--muted-foreground)]">
+            <Dumbbell className="h-4 w-4 shrink-0" />
+            <span>
+              Garmin — Chest & Triceps, Back & Biceps, Shoulders & Core (FIT sets when available)
+            </span>
           </div>
-          <div className="grid gap-4 md:grid-cols-3">
+
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <Card className="border-indigo-200/50 bg-indigo-50/40 dark:border-indigo-900/50 dark:bg-indigo-950/30">
+              <CardHeader className="pb-2">
+                <CardTitle className="flex items-center gap-2 text-sm font-medium text-[var(--foreground)]">
+                  <Target className="h-4 w-4 text-indigo-600 dark:text-indigo-400" />
+                  This week
+                </CardTitle>
+                <CardDescription>{data.strengthWeekly.weekLabel}</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <p className="text-2xl font-semibold tabular-nums text-[var(--foreground)]">
+                  {data.strengthWeekly.sessionsDone}{" "}
+                  <span className="text-base font-normal text-[var(--muted-foreground)]">
+                    / {data.strengthWeekly.sessionsTarget} sessions
+                  </span>
+                </p>
+                <p className="mt-1 text-xs text-[var(--muted-foreground)]">
+                  Basement goal: hit {data.strengthWeekly.sessionsTarget} strength sessions per week
+                </p>
+              </CardContent>
+            </Card>
             {data.strength.map((s) => (
               <Card key={`${s.label}-${s.last}`}>
                 <CardHeader className="pb-2">
@@ -320,8 +344,7 @@ export function TrainingDashboard({
                 </CardHeader>
                 <CardContent className="space-y-1 text-sm">
                   <p>
-                    <span className="text-[var(--muted-foreground)]">Duration:</span> {s.durationMin}{" "}
-                    min
+                    <span className="text-[var(--muted-foreground)]">Duration:</span> {s.durationMin} min
                   </p>
                   {s.volumeKg != null ? (
                     <p>
@@ -334,6 +357,43 @@ export function TrainingDashboard({
               </Card>
             ))}
           </div>
+
+          {data.strengthProgressionChart.length > 0 && data.strengthProgressionSeries.length > 0 ? (
+            <ChartCard
+              title="Avg weight (lb) per exercise"
+              description="Weighted by reps when Garmin records weight; last 90 days"
+            >
+              <ResponsiveContainer width="100%" height={280}>
+                <LineChart data={data.strengthProgressionChart}>
+                  <CartesianGrid strokeDasharray="3 3" className="stroke-[var(--border)]" />
+                  <XAxis dataKey="dateLabel" tick={{ fontSize: 10 }} interval={0} angle={-20} textAnchor="end" height={52} />
+                  <YAxis domain={["auto", "auto"]} tick={{ fontSize: 11 }} />
+                  <Tooltip
+                    contentStyle={{
+                      background: "var(--card)",
+                      border: "1px solid var(--border)",
+                      borderRadius: 8,
+                    }}
+                  />
+                  {data.strengthProgressionSeries.map((s, i) => {
+                    const colors = ["#6366f1", "#059669", "#d97706", "#7c3aed"];
+                    return (
+                      <Line
+                        key={s.dataKey}
+                        type="monotone"
+                        dataKey={s.dataKey}
+                        name={s.exerciseName}
+                        stroke={colors[i % colors.length]}
+                        strokeWidth={2}
+                        dot={{ r: 3 }}
+                        connectNulls
+                      />
+                    );
+                  })}
+                </LineChart>
+              </ResponsiveContainer>
+            </ChartCard>
+          ) : null}
 
           {data.strengthVolumeBySession.length > 0 ? (
             <ChartCard
@@ -378,63 +438,115 @@ export function TrainingDashboard({
           ) : null}
 
           <div className="space-y-4">
-            <h3 className="text-sm font-semibold text-[var(--foreground)]">Sets & weights</h3>
+            <h3 className="text-sm font-semibold text-[var(--foreground)]">Workouts & sets</h3>
             {data.strengthSessions.length === 0 ? (
               <p className="text-sm text-[var(--muted-foreground)]">
-                Run a Garmin sync after your next dumbbell session to populate per-exercise sets.
+                Run a Garmin sync after your next dumbbell session — FIT files populate reps and weights.
               </p>
             ) : (
               data.strengthSessions.map((session) => (
-                <Card key={session.garmin_activity_id}>
+                <Card key={session.garmin_activity_id} className="overflow-hidden">
                   <CardHeader className="pb-2">
-                    <CardTitle className="text-base">{session.workout_name}</CardTitle>
-                    <CardDescription>
-                      {session.dateLabel}
-                      {session.activity_name ? ` · ${session.activity_name}` : ""}
-                    </CardDescription>
+                    <div className="flex flex-wrap items-start justify-between gap-2">
+                      <div>
+                        <CardTitle className="text-base">{session.workout_name}</CardTitle>
+                        <CardDescription>
+                          {session.dateLabel}
+                          {session.activity_name ? ` · ${session.activity_name}` : ""}
+                        </CardDescription>
+                      </div>
+                      {session.totalVolumeLbs > 0 ? (
+                        <span className="rounded-full bg-[var(--muted)] px-3 py-1 text-xs font-medium text-[var(--foreground)]">
+                          {Math.round(session.totalVolumeLbs).toLocaleString()} lb·reps total
+                        </span>
+                      ) : null}
+                    </div>
                   </CardHeader>
-                  <CardContent className="overflow-x-auto">
-                    <table className="w-full min-w-[720px] border-collapse text-sm">
-                      <thead>
-                        <tr className="border-b border-[var(--border)] text-left text-[var(--muted-foreground)]">
-                          <th className="py-2 pr-3 font-medium">Exercise</th>
-                          <th className="py-2 pr-3 font-medium">Set</th>
-                          <th className="py-2 pr-3 font-medium">Reps</th>
-                          <th className="py-2 pr-3 font-medium">Weight (lb)</th>
-                          <th className="py-2 pr-3 font-medium">Weight (kg)</th>
-                          <th className="py-2 pr-3 font-medium">Rest (s)</th>
-                          <th className="py-2 pr-3 font-medium">Volume</th>
-                          <th className="py-2 font-medium">Notes</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {session.rows.map((row, idx) => (
-                          <tr
-                            key={`${session.garmin_activity_id}-${idx}`}
-                            className="border-b border-[var(--border)]/60"
+                  <CardContent className="space-y-2">
+                    {session.exercises.length === 0 ? (
+                      <p className="text-sm text-[var(--muted-foreground)]">No per-set rows for this session.</p>
+                    ) : (
+                      session.exercises.map((ex) => {
+                        const exKey = `${session.garmin_activity_id}::${ex.exercise_name}`;
+                        const open = expandedStrengthKey === exKey;
+                        return (
+                          <div
+                            key={exKey}
+                            className="rounded-lg border border-[var(--border)] bg-[var(--card)]"
                           >
-                            <td className="py-2 pr-3">{row.exercise_name}</td>
-                            <td className="py-2 pr-3">{row.set_number}</td>
-                            <td className="py-2 pr-3">{row.reps ?? "—"}</td>
-                            <td className="py-2 pr-3">
-                              {row.weight_lbs != null ? Math.round(Number(row.weight_lbs) * 10) / 10 : "—"}
-                            </td>
-                            <td className="py-2 pr-3">
-                              {row.weight_kg != null ? Math.round(Number(row.weight_kg) * 100) / 100 : "—"}
-                            </td>
-                            <td className="py-2 pr-3">{row.rest_seconds ?? "—"}</td>
-                            <td className="py-2 pr-3">
-                              {row.volume_lbs != null
-                                ? Math.round(row.volume_lbs).toLocaleString()
-                                : "—"}
-                            </td>
-                            <td className="max-w-[200px] truncate py-2 text-[var(--muted-foreground)]" title={row.notes ?? ""}>
-                              {row.notes ?? "—"}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
+                            <button
+                              type="button"
+                              className="flex w-full items-center justify-between gap-2 px-3 py-3 text-left text-sm transition hover:bg-[var(--muted)]/40"
+                              onClick={() => setExpandedStrengthKey(open ? null : exKey)}
+                            >
+                              <span className="min-w-0 font-medium text-[var(--foreground)]">
+                                {ex.exercise_name}
+                              </span>
+                              <div className="flex shrink-0 items-center gap-3 text-xs text-[var(--muted-foreground)]">
+                                <span>{ex.setCount} sets</span>
+                                {ex.avgWeightLbs != null ? (
+                                  <span className="tabular-nums">avg {ex.avgWeightLbs} lb</span>
+                                ) : null}
+                                {ex.totalVolumeLbs != null ? (
+                                  <span className="tabular-nums">vol {Math.round(ex.totalVolumeLbs).toLocaleString()}</span>
+                                ) : null}
+                                {open ? (
+                                  <ChevronDown className="h-4 w-4" />
+                                ) : (
+                                  <ChevronRight className="h-4 w-4" />
+                                )}
+                              </div>
+                            </button>
+                            {open ? (
+                              <div className="border-t border-[var(--border)] px-2 pb-3 pt-1">
+                                <div className="overflow-x-auto">
+                                  <table className="w-full min-w-[520px] border-collapse text-xs sm:text-sm">
+                                    <thead>
+                                      <tr className="text-left text-[var(--muted-foreground)]">
+                                        <th className="py-2 pr-2 font-medium">Set</th>
+                                        <th className="py-2 pr-2 font-medium">Reps</th>
+                                        <th className="py-2 pr-2 font-medium">lb</th>
+                                        <th className="py-2 pr-2 font-medium">kg</th>
+                                        <th className="py-2 pr-2 font-medium">Rest</th>
+                                        <th className="py-2 pr-2 font-medium">Vol</th>
+                                        <th className="py-2 font-medium">Notes</th>
+                                      </tr>
+                                    </thead>
+                                    <tbody>
+                                      {ex.sets.map((row, idx) => (
+                                        <tr key={`${exKey}-${idx}`} className="border-b border-[var(--border)]/50">
+                                          <td className="py-2 pr-2">{row.set_number}</td>
+                                          <td className="py-2 pr-2">{row.reps ?? "—"}</td>
+                                          <td className="py-2 pr-2 tabular-nums">
+                                            {row.weight_lbs != null
+                                              ? Math.round(Number(row.weight_lbs) * 10) / 10
+                                              : "—"}
+                                          </td>
+                                          <td className="py-2 pr-2 tabular-nums">
+                                            {row.weight_kg != null
+                                              ? Math.round(Number(row.weight_kg) * 100) / 100
+                                              : "—"}
+                                          </td>
+                                          <td className="py-2 pr-2">{row.rest_seconds ?? "—"}</td>
+                                          <td className="py-2 pr-2 tabular-nums">
+                                            {row.volume_lbs != null
+                                              ? Math.round(row.volume_lbs).toLocaleString()
+                                              : "—"}
+                                          </td>
+                                          <td className="max-w-[180px] truncate py-2 text-[var(--muted-foreground)]" title={row.notes ?? ""}>
+                                            {row.notes ?? "—"}
+                                          </td>
+                                        </tr>
+                                      ))}
+                                    </tbody>
+                                  </table>
+                                </div>
+                              </div>
+                            ) : null}
+                          </div>
+                        );
+                      })
+                    )}
                   </CardContent>
                 </Card>
               ))

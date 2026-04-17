@@ -231,6 +231,9 @@ export async function parseGarminActivityFit(buf: Buffer): Promise<ParsedGarminF
           set_number: setNumber,
           reps,
           weight_lbs: lbs,
+          weight_kg: kg,
+          rest_seconds: restSeconds,
+          notes,
           sort_index: sortIndex,
           raw: jsonSafe({
             fitSet: cur,
