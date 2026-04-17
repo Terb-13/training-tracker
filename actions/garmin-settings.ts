@@ -24,7 +24,8 @@ type SavedProfileRow = Pick<
   | "updated_at"
 >;
 
-async function upsertProfileByUpdateOrInsert(
+/** Update by `id`, or insert if no row was updated. No PostgREST `.upsert()` / ON CONFLICT. */
+async function saveProfileUpdateOrInsert(
   supabase: Awaited<ReturnType<typeof createServerSupabaseClient>>,
   userId: string,
   hasExistingRow: boolean,
@@ -114,7 +115,7 @@ export async function saveGarminCredentials(formData: FormData): Promise<void> {
     garmin_wellness: existing?.garmin_wellness ?? null,
   };
 
-  const { data: saved, error } = await upsertProfileByUpdateOrInsert(supabase, user.id, Boolean(existing), row);
+  const { data: saved, error } = await saveProfileUpdateOrInsert(supabase, user.id, Boolean(existing), row);
 
   if (error || !saved) {
     const msg = error ?? "Save failed";
