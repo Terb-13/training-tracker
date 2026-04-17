@@ -289,6 +289,7 @@ export interface Database {
           calories_in: number | null;
           deficit_kcal: number | null;
           projected_weekly_loss_lbs: number | null;
+          raw_data: Json | null;
           created_at: string;
           updated_at: string;
         };
@@ -301,6 +302,7 @@ export interface Database {
           calories_in?: number | null;
           deficit_kcal?: number | null;
           projected_weekly_loss_lbs?: number | null;
+          raw_data?: Json | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -313,6 +315,7 @@ export interface Database {
           calories_in?: number | null;
           deficit_kcal?: number | null;
           projected_weekly_loss_lbs?: number | null;
+          raw_data?: Json | null;
           created_at?: string;
           updated_at?: string;
         };

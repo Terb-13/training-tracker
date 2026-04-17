@@ -65,6 +65,39 @@ const STRENGTH_EXERCISE_INSERT_KEYS = new Set([
   "created_at",
 ]);
 
+const BODY_COMPOSITION_INSERT_KEYS = new Set([
+  "id",
+  "user_id",
+  "date",
+  "weight_lbs",
+  "body_fat_pct",
+  "muscle_mass_lbs",
+  "source",
+  "raw",
+  "created_at",
+]);
+
+const DAILY_DEFICIT_INSERT_KEYS = new Set([
+  "id",
+  "user_id",
+  "date",
+  "active_calories",
+  "resting_calories_est",
+  "calories_in",
+  "deficit_kcal",
+  "projected_weekly_loss_lbs",
+  "raw_data",
+  "created_at",
+  "updated_at",
+]);
+
+/** Profiles update keys (Garmin token refresh path only). */
+export const PROFILE_GARMIN_UPDATE_KEYS = new Set([
+  "garmin_tokens_encrypted",
+  "garmin_last_sync_at",
+  "garmin_wellness",
+]);
+
 function mergeJsonBlob(existing: unknown, extras: Record<string, unknown>): Json {
   const base =
     existing && typeof existing === "object" && !Array.isArray(existing)
@@ -120,4 +153,37 @@ export function sanitizeStrengthExerciseInsert(row: Record<string, unknown>): Re
   picked.raw = blob;
   picked.raw_data = blob;
   return picked;
+}
+
+export function sanitizeBodyCompositionInsert(row: Record<string, unknown>): Record<string, unknown> {
+  const picked: Record<string, unknown> = {};
+  const extra: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(row)) {
+    if (BODY_COMPOSITION_INSERT_KEYS.has(k)) picked[k] = v;
+    else extra[k] = v;
+  }
+  const existing = picked.raw;
+  picked.raw = mergeJsonBlob(existing, extra);
+  return picked;
+}
+
+export function sanitizeDailyDeficitInsert(row: Record<string, unknown>): Record<string, unknown> {
+  const picked: Record<string, unknown> = {};
+  const extra: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(row)) {
+    if (DAILY_DEFICIT_INSERT_KEYS.has(k)) picked[k] = v;
+    else extra[k] = v;
+  }
+  const existing = picked.raw_data;
+  picked.raw_data = mergeJsonBlob(existing, extra);
+  return picked;
+}
+
+/** Only known profile update keys; unknown keys are dropped (no crash). */
+export function pickProfileGarminUpdate(patch: Record<string, unknown>): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const k of PROFILE_GARMIN_UPDATE_KEYS) {
+    if (Object.prototype.hasOwnProperty.call(patch, k)) out[k] = patch[k];
+  }
+  return out;
 }

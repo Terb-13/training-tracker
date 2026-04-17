@@ -1,7 +1,10 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import {
+  pickProfileGarminUpdate,
   sanitizeActivityInsert,
+  sanitizeBodyCompositionInsert,
+  sanitizeDailyDeficitInsert,
   sanitizeStrengthExerciseInsert,
   sanitizeStrengthSessionInsert,
 } from "@/lib/sync/schema-insert";
@@ -61,6 +64,67 @@ async function insertRowsAdaptive(
     });
   }
   throw new Error(`${table} insert: exceeded adaptive retries`);
+}
+
+async function upsertRowsAdaptive(
+  supabase: SupabaseClient,
+  table: "body_composition" | "daily_deficit",
+  rows: Record<string, unknown>[],
+  onConflict: string,
+): Promise<void> {
+  if (!rows.length) return;
+  let current = rows.map((r) => ({ ...r }));
+  for (let attempt = 0; attempt < 48; attempt++) {
+    const { error } = await supabase.from(table).upsert(current as never, { onConflict });
+    if (!error) return;
+    const col = extractMissingColumnName(error.message);
+    if (!col) throw new Error(error.message);
+    current = current.map((r) => {
+      const next = { ...r };
+      delete next[col];
+      return next;
+    });
+  }
+  throw new Error(`${table} upsert: exceeded adaptive retries`);
+}
+
+export async function upsertBodyCompositionTolerant(
+  supabase: SupabaseClient,
+  rows: Record<string, unknown>[],
+): Promise<void> {
+  if (!rows.length) return;
+  const sanitized = rows.map((r) => sanitizeBodyCompositionInsert({ ...r }));
+  await upsertRowsAdaptive(supabase, "body_composition", sanitized, "user_id,date");
+}
+
+export async function upsertDailyDeficitTolerant(
+  supabase: SupabaseClient,
+  rows: Record<string, unknown>[],
+): Promise<void> {
+  if (!rows.length) return;
+  const sanitized = rows.map((r) => sanitizeDailyDeficitInsert({ ...r }));
+  await upsertRowsAdaptive(supabase, "daily_deficit", sanitized, "user_id,date");
+}
+
+/** Update profile fields allowed on Garmin sync; strips unknown columns until PostgREST accepts. */
+export async function updateProfileGarminTolerant(
+  supabase: SupabaseClient,
+  userId: string,
+  patch: Record<string, unknown>,
+): Promise<void> {
+  let current = pickProfileGarminUpdate(patch);
+  if (Object.keys(current).length === 0) return;
+  for (let attempt = 0; attempt < 48; attempt++) {
+    const { error } = await supabase.from("profiles").update(current as never).eq("id", userId);
+    if (!error) return;
+    const col = extractMissingColumnName(error.message);
+    if (!col) throw new Error(error.message);
+    const next = { ...current };
+    delete next[col];
+    current = next;
+    if (Object.keys(current).length === 0) return;
+  }
+  throw new Error("profiles update: exceeded adaptive retries");
 }
 
 /**

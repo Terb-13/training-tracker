@@ -27,6 +27,9 @@ import {
   insertStrengthExercisesTolerant,
   replaceActivitiesTolerant,
   replaceStrengthSessionsTolerant,
+  updateProfileGarminTolerant,
+  upsertBodyCompositionTolerant,
+  upsertDailyDeficitTolerant,
 } from "@/lib/sync/supabase-tolerant";
 
 type Profile = Database["public"]["Tables"]["profiles"]["Row"];
@@ -307,7 +310,11 @@ export async function runGarminSync(
           body_fat_pct: null,
           muscle_mass_lbs: null,
           source: "garmin",
-          raw: null,
+          raw: jsonSafe({
+            source: "garmin",
+            weight_lbs: w,
+            date: day.toISOString().slice(0, 10),
+          }),
         });
       } catch {
         /* no weight that day */
@@ -315,10 +322,10 @@ export async function runGarminSync(
     }
 
     if (bodyRows.length) {
-      const { error: bErr } = await supabase.from("body_composition").upsert(bodyRows, {
-        onConflict: "user_id,date",
-      });
-      if (bErr) throw new Error(bErr.message);
+      await upsertBodyCompositionTolerant(
+        supabase,
+        bodyRows.map((r) => ({ ...r }) as Record<string, unknown>),
+      );
     }
 
     let sleepHours = 6.5;
@@ -375,13 +382,21 @@ export async function runGarminSync(
         calories_in: null,
         deficit_kcal: deficit,
         projected_weekly_loss_lbs: projLoss ?? null,
+        raw_data: jsonSafe({
+          deficit_kcal: deficit,
+          target_calories: target,
+          active_calories: active,
+          resting_calories_est: resting,
+          calories_in: null,
+          projected_weekly_loss_lbs: projLoss,
+        }),
       });
     }
 
-    const { error: dErr } = await supabase.from("daily_deficit").upsert(deficitRows, {
-      onConflict: "user_id,date",
-    });
-    if (dErr) throw new Error(dErr.message);
+    await upsertDailyDeficitTolerant(
+      supabase,
+      deficitRows.map((r) => ({ ...r }) as Record<string, unknown>),
+    );
 
     const exported = gc.exportToken();
     const encryptedTokens = encryptJson({
@@ -400,18 +415,14 @@ export async function runGarminSync(
       recoveryScore,
     };
 
-    const { error: pErr } = await supabase
-      .from("profiles")
-      .update({
-        garmin_tokens_encrypted: encryptedTokens,
-        garmin_last_sync_at: new Date().toISOString(),
-        garmin_wellness: garminWellness,
-      })
-      .eq("id", userId);
-    if (pErr) throw new Error(pErr.message);
+    await updateProfileGarminTolerant(supabase, userId, {
+      garmin_tokens_encrypted: encryptedTokens,
+      garmin_last_sync_at: new Date().toISOString(),
+      garmin_wellness: garminWellness,
+    });
 
     console.log(
-      `[Garmin sync] OK — ${activityRows.length} activities, ${flatExercises.length} strength_exercises inserted (raw_data used as fallback)`,
+      `[Garmin sync] OK — ${activityRows.length} activities, ${flatExercises.length} strength_exercises, ${deficitRows.length} daily_deficit rows inserted (tolerant mode)`,
     );
 
     return {
@@ -421,6 +432,7 @@ export async function runGarminSync(
         activities: activityRows.length,
         strength: strengthRows.length,
         strength_exercises: flatExercises.length,
+        daily_deficit: deficitRows.length,
         weights: bodyRows.length,
         sleepHours: Math.round(sleepHours * 10) / 10,
         restingHr,
