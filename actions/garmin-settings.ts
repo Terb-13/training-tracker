@@ -5,10 +5,72 @@ import { redirect } from "next/navigation";
 
 import { encryptJson } from "@/lib/crypto/credentials";
 import { DEFAULT_PROFILE } from "@/lib/profile-constants";
+import { extractMissingColumnName } from "@/lib/sync/supabase-tolerant";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import type { Database } from "@/types/database";
 
 type ProfileInsert = Database["public"]["Tables"]["profiles"]["Insert"];
+
+const PROFILE_SAVE_SELECT =
+  "id, garmin_email, garmin_password_encrypted, garmin_tokens_encrypted, garmin_last_sync_at, updated_at" as const;
+
+type SavedProfileRow = Pick<
+  Database["public"]["Tables"]["profiles"]["Row"],
+  | "id"
+  | "garmin_email"
+  | "garmin_password_encrypted"
+  | "garmin_tokens_encrypted"
+  | "garmin_last_sync_at"
+  | "updated_at"
+>;
+
+async function upsertProfileByUpdateOrInsert(
+  supabase: Awaited<ReturnType<typeof createServerSupabaseClient>>,
+  userId: string,
+  hasExistingRow: boolean,
+  row: ProfileInsert,
+): Promise<{ data: SavedProfileRow | null; error: string | null }> {
+  const insertPayload = { ...row } as Record<string, unknown>;
+  const updatePayload: Record<string, unknown> = { ...row };
+  delete updatePayload.id;
+
+  if (hasExistingRow) {
+    let patch = { ...updatePayload };
+    for (let attempt = 0; attempt < 48; attempt++) {
+      const { data, error } = await supabase
+        .from("profiles")
+        .update(patch as never)
+        .eq("id", userId)
+        .select(PROFILE_SAVE_SELECT)
+        .maybeSingle();
+      if (!error && data) return { data, error: null };
+      if (!error && !data) break;
+      const msg = error?.message ?? "";
+      const col = extractMissingColumnName(msg);
+      if (!col) return { data: null, error: msg };
+      const next = { ...patch };
+      delete next[col];
+      patch = next;
+    }
+  }
+
+  let ins = { ...insertPayload };
+  for (let attempt = 0; attempt < 48; attempt++) {
+    const { data, error } = await supabase
+      .from("profiles")
+      .insert(ins as never)
+      .select(PROFILE_SAVE_SELECT)
+      .maybeSingle();
+    if (!error && data) return { data, error: null };
+    const msg = error?.message ?? "";
+    const col = extractMissingColumnName(msg);
+    if (!col) return { data: null, error: msg };
+    const next = { ...ins };
+    delete next[col];
+    ins = next;
+  }
+  return { data: null, error: "profiles write: exceeded adaptive retries" };
+}
 
 /** Form actions must return void in Next.js 16 — use redirect for feedback. */
 export async function saveGarminCredentials(formData: FormData): Promise<void> {
@@ -52,20 +114,15 @@ export async function saveGarminCredentials(formData: FormData): Promise<void> {
     garmin_wellness: existing?.garmin_wellness ?? null,
   };
 
-  const { data: saved, error } = await supabase
-    .from("profiles")
-    .upsert(row, { onConflict: "id" })
-    .select(
-      "id, garmin_email, garmin_password_encrypted, garmin_tokens_encrypted, garmin_last_sync_at, updated_at",
-    )
-    .single();
+  const { data: saved, error } = await upsertProfileByUpdateOrInsert(supabase, user.id, Boolean(existing), row);
 
-  if (error) {
-    console.error("[saveGarminCredentials] upsert", error.message);
-    redirect(`/dashboard/settings?error=${encodeURIComponent(error.message)}`);
+  if (error || !saved) {
+    const msg = error ?? "Save failed";
+    console.error("[saveGarminCredentials] update/insert", msg);
+    redirect(`/dashboard/settings?error=${encodeURIComponent(msg)}`);
   }
 
-  console.log("[saveGarminCredentials] upsert ok", {
+  console.log("[saveGarminCredentials] save ok", {
     id: saved?.id,
     garmin_email: saved?.garmin_email,
     has_password_encrypted: Boolean(saved?.garmin_password_encrypted),
