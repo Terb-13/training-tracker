@@ -133,12 +133,15 @@ export async function replaceDailyDeficitTolerant(
   const minD = dates[0];
   const maxD = dates[dates.length - 1];
 
-  const { error: delIn } = await supabase
-    .from("daily_deficit")
-    .delete()
-    .eq("user_id", userId)
-    .in("date", dates);
-  if (delIn) throw new Error(delIn.message);
+  /* Per-date deletes are more reliable than .in() with some PostgREST/RLS edge cases. */
+  for (const d of dates) {
+    const { error: delOne } = await supabase
+      .from("daily_deficit")
+      .delete()
+      .eq("user_id", userId)
+      .eq("date", d);
+    if (delOne) throw new Error(delOne.message);
+  }
 
   const { error: delRange } = await supabase
     .from("daily_deficit")
