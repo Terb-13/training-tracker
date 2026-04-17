@@ -3,6 +3,7 @@ import type { Database, Json } from "@/types/database";
 type StrengthInsert = Database["public"]["Tables"]["strength_exercises"]["Insert"];
 
 const KG_TO_LB = 2.2046226218;
+const LB_TO_KG = 0.453592;
 
 /** Maps activity title / notes to Brett's three dumbbell splits (display strings). */
 export function mapWorkoutName(activityName: string, notes?: string | null): string {
@@ -75,6 +76,9 @@ function parseSummarizedExerciseSets(
       set_number: setNumber,
       reps,
       weight_lbs: weightLbs,
+      weight_kg: weightLbs != null ? Math.round(weightLbs * LB_TO_KG * 1000) / 1000 : null,
+      rest_seconds: null,
+      notes: null,
       sort_index: sortIndex,
       raw: (fragment ?? null) as Json,
     });
@@ -140,6 +144,9 @@ function parseSplitSummaries(
       set_number: i + 1,
       reps,
       weight_lbs: null,
+      weight_kg: null,
+      rest_seconds: null,
+      notes: null,
       sort_index: baseSort + i,
       raw: sp as Json,
     });
@@ -163,6 +170,9 @@ function sessionFallbackRow(
       set_number: 1,
       reps: totalReps,
       weight_lbs: null,
+      weight_kg: null,
+      rest_seconds: null,
+      notes: null,
       sort_index: 0,
       raw: {
         totalReps: merged.totalReps ?? null,
@@ -175,15 +185,16 @@ function sessionFallbackRow(
 
 /** Sum volume in kg from parsed rows (reps × weight), when weights exist. */
 export function volumeKgFromRows(
-  rows: Pick<StrengthInsert, "reps" | "weight_lbs">[],
+  rows: Pick<StrengthInsert, "reps" | "weight_lbs" | "weight_kg">[],
 ): number | null {
   if (!rows.length) return null;
   let sumKg = 0;
   let any = false;
   for (const r of rows) {
-    if (r.reps != null && r.weight_lbs != null) {
+    const kg = r.weight_kg ?? (r.weight_lbs != null ? r.weight_lbs * LB_TO_KG : null);
+    if (r.reps != null && kg != null) {
       any = true;
-      sumKg += r.reps * r.weight_lbs * 0.453592;
+      sumKg += r.reps * kg;
     }
   }
   return any ? Math.round(sumKg) : null;
@@ -229,10 +240,7 @@ export function parseStrengthGarminActivity(
   }));
 }
 
-/**
- * Reserved for FIT file buffers (e.g. from `downloadOriginalActivityData`).
- * Garmin’s REST payloads already include set summaries; FIT parsing can be added with a binary decoder when needed.
- */
+/** @deprecated FIT sets are parsed in `parseGarminActivityFit` (garmin-sync). */
 export function parseStrengthFromFitBuffer(_buf: Buffer): StrengthInsert[] {
   return [];
 }

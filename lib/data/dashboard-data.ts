@@ -64,6 +64,9 @@ export type DashboardViewModel = {
       set_number: number;
       reps: number | null;
       weight_lbs: number | null;
+      weight_kg: number | null;
+      rest_seconds: number | null;
+      notes: string | null;
       volume_lbs: number | null;
     }[];
   }[];
@@ -87,7 +90,11 @@ function isCyclingDb(a: {
   sport_type_key: string | null;
   activity_type: string | null;
   activity_name: string | null;
+  fit_sub_sport?: string | null;
+  fit_sport?: string | null;
 }): boolean {
+  const fit = `${a.fit_sport ?? ""} ${a.fit_sub_sport ?? ""}`.toLowerCase();
+  if (fit.includes("cycling") || fit.includes("indoorcycling")) return true;
   const s = `${a.sport_type_key ?? ""} ${a.activity_type ?? ""} ${a.activity_name ?? ""}`.toLowerCase();
   return s.includes("cycling") || s.includes("bike") || s.includes("peloton");
 }
@@ -267,16 +274,26 @@ export async function loadDashboardData(userId: string): Promise<DashboardViewMo
         activity_name: rows[0]?.activity_name ?? null,
         dateLabel: format(new Date(s.started_at), "MMM d"),
         started_at: s.started_at,
-        rows: rows.map((r) => ({
-          exercise_name: r.exercise_name,
-          set_number: r.set_number,
-          reps: r.reps,
-          weight_lbs: r.weight_lbs,
-          volume_lbs:
-            r.reps != null && r.weight_lbs != null
-              ? Math.round(r.reps * Number(r.weight_lbs) * 10) / 10
-              : null,
-        })),
+        rows: rows.map((r) => {
+          const lbEquiv =
+            r.weight_lbs != null
+              ? Number(r.weight_lbs)
+              : r.weight_kg != null
+                ? Number(r.weight_kg) / 0.453592
+                : null;
+          const volLb =
+            r.reps != null && lbEquiv != null ? Math.round(r.reps * lbEquiv * 10) / 10 : null;
+          return {
+            exercise_name: r.exercise_name,
+            set_number: r.set_number,
+            reps: r.reps,
+            weight_lbs: r.weight_lbs,
+            weight_kg: r.weight_kg,
+            rest_seconds: r.rest_seconds,
+            notes: r.notes,
+            volume_lbs: volLb,
+          };
+        }),
       };
     }) ?? [];
 

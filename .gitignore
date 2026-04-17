@@ -40,3 +40,6 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Local Garmin FIT samples (offline analysis; large binaries)
+*_ACTIVITY.fit

@@ -1,9 +1,22 @@
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+
 import { subDays } from "date-fns";
 import { GarminConnect } from "garmin-connect";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { decryptJson, encryptJson } from "@/lib/crypto/credentials";
 import type { Database, Json } from "@/types/database";
+import {
+  encodeGarminActivityRawData,
+  extractFitFromZipBuffer,
+  isStrengthFitSession,
+  mapWorkoutNameFromFitWktName,
+  parseGarminActivityFit,
+  sessionToActivityFields,
+  type ParsedGarminFit,
+} from "@/lib/sync/parse-fit";
 import {
   mapWorkoutName,
   parseStrengthGarminActivity,
@@ -52,6 +65,30 @@ function classifySport(a: GarminActivity): "cycling" | "strength" | "other" {
 
 function isStrengthActivity(a: GarminActivity): boolean {
   return classifySport(a) === "strength";
+}
+
+function shouldSyncStrengthDetail(a: GarminActivity, parsed: ParsedGarminFit | null | undefined): boolean {
+  if (parsed?.strengthRows?.length) return true;
+  if (parsed?.session && isStrengthFitSession(parsed.session as Record<string, unknown>)) return true;
+  return isStrengthActivity(a);
+}
+
+async function downloadFitBuffer(gc: GarminConnect, activityId: number): Promise<Buffer | null> {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "garmin-fit-"));
+  try {
+    await gc.downloadOriginalActivityData({ activityId }, tmp, "zip");
+    const zipPath = path.join(tmp, `${activityId}.zip`);
+    if (!fs.existsSync(zipPath)) return null;
+    return extractFitFromZipBuffer(fs.readFileSync(zipPath));
+  } catch {
+    return null;
+  } finally {
+    try {
+      fs.rmSync(tmp, { recursive: true, force: true });
+    } catch {
+      /* ignore */
+    }
+  }
 }
 
 function parseActivityDate(a: GarminActivity): Date {
@@ -106,22 +143,49 @@ export async function runGarminSync(
     const activities = (await gc.getActivities(0, 200)) as GarminActivity[];
     const recent = activities.filter((a) => parseActivityDate(a) >= since);
 
-    const activityRows = recent.map((a) => ({
-      user_id: userId,
-      garmin_activity_id: a.activityId,
-      activity_type: a.activityType?.typeKey ?? null,
-      activity_name: a.activityName ?? "",
-      start_time_gmt: parseActivityDate(a).toISOString(),
-      duration_sec: Math.round(a.duration ?? 0),
-      distance_m: a.distance ?? null,
-      calories: a.calories ?? null,
-      avg_hr: a.averageHR ?? null,
-      max_power: typeof a.maxPower === "number" ? a.maxPower : null,
-      avg_power: typeof a.avgPower === "number" ? a.avgPower : null,
-      elevation_gain_m: a.elevationGain ?? null,
-      sport_type_key: a.activityType?.typeKey ?? null,
-      raw: a as unknown as Json,
-    }));
+    const fitById = new Map<number, ParsedGarminFit | null>();
+    for (let b = 0; b < recent.length; b += 4) {
+      const slice = recent.slice(b, b + 4);
+      const batchFit = await Promise.all(
+        slice.map(async (a) => {
+          const buf = await downloadFitBuffer(gc, a.activityId);
+          const parsed = buf ? await parseGarminActivityFit(buf) : null;
+          return { id: a.activityId, parsed };
+        }),
+      );
+      for (const { id, parsed } of batchFit) fitById.set(id, parsed);
+    }
+
+    const activityRows = recent.map((a) => {
+      const parsed = fitById.get(a.activityId) ?? null;
+      const fit = sessionToActivityFields(parsed?.session ?? null);
+      return {
+        user_id: userId,
+        garmin_activity_id: a.activityId,
+        activity_type: a.activityType?.typeKey ?? null,
+        activity_name: a.activityName ?? "",
+        start_time_gmt: fit.start_time_gmt ?? parseActivityDate(a).toISOString(),
+        duration_sec: fit.duration_sec ?? Math.round(a.duration ?? 0),
+        distance_m: fit.distance_m ?? a.distance ?? null,
+        calories: fit.calories ?? a.calories ?? null,
+        avg_hr: fit.avg_hr ?? a.averageHR ?? null,
+        max_hr: fit.max_hr ?? null,
+        max_power: fit.max_power ?? (typeof a.maxPower === "number" ? a.maxPower : null),
+        avg_power: fit.avg_power ?? (typeof a.avgPower === "number" ? a.avgPower : null),
+        elevation_gain_m: fit.elevation_gain_m ?? a.elevationGain ?? null,
+        sport_type_key: a.activityType?.typeKey ?? null,
+        fit_sport: fit.fit_sport,
+        fit_sub_sport: fit.fit_sub_sport,
+        total_work_j: fit.total_work_j,
+        normalized_power: fit.normalized_power,
+        training_stress_score: fit.training_stress_score,
+        total_ascent_m: fit.total_ascent_m,
+        total_descent_m: fit.total_descent_m,
+        num_laps: fit.num_laps,
+        total_timer_time_sec: fit.total_timer_time_sec,
+        raw_data: encodeGarminActivityRawData(a, parsed?.rawDataFit ?? null),
+      };
+    });
 
     if (activityRows.length) {
       const { error: actErr } = await supabase.from("activities").upsert(activityRows, {
@@ -130,7 +194,7 @@ export async function runGarminSync(
       if (actErr) throw new Error(actErr.message);
     }
 
-    const strength = recent.filter(isStrengthActivity);
+    const strength = recent.filter((a) => shouldSyncStrengthDetail(a, fitById.get(a.activityId) ?? null));
 
     type ParsedBundle = {
       activity: GarminActivity;
@@ -142,6 +206,19 @@ export async function runGarminSync(
       const batch = strength.slice(i, i + batchSize);
       const results = await Promise.all(
         batch.map(async (a) => {
+          const parsed = fitById.get(a.activityId) ?? null;
+          if (parsed?.strengthRows?.length) {
+            const rows: Database["public"]["Tables"]["strength_exercises"]["Insert"][] = parsed.strengthRows.map(
+              (r, idx) => ({
+                user_id: userId,
+                garmin_activity_id: a.activityId,
+                ...r,
+                activity_name: a.activityName ?? "",
+                sort_index: idx,
+              }),
+            );
+            return { activity: a, rows };
+          }
           let detail: Record<string, unknown> | null = null;
           try {
             const d = (await gc.getActivity({ activityId: a.activityId })) as unknown;
@@ -161,19 +238,25 @@ export async function runGarminSync(
     }
 
     const strengthRows = bundles.map(({ activity: a, rows }) => {
+      const parsed = fitById.get(a.activityId) ?? null;
       const fromSets = volumeKgFromRows(rows);
       const vol = fromSets ?? Math.round((a.duration / 60) * 8);
+      const fit = sessionToActivityFields(parsed?.session ?? null);
+      const label = parsed?.workoutWktName
+        ? mapWorkoutNameFromFitWktName(parsed.workoutWktName)
+        : mapWorkoutName(a.activityName || "Strength");
       return {
         user_id: userId,
         garmin_activity_id: a.activityId,
-        label: mapWorkoutName(a.activityName || "Strength"),
-        started_at: parseActivityDate(a).toISOString(),
-        duration_sec: Math.round(a.duration ?? 0),
+        label,
+        started_at: fit.start_time_gmt ?? parseActivityDate(a).toISOString(),
+        duration_sec: fit.duration_sec ?? Math.round(a.duration ?? 0),
         volume_kg: vol,
         exercise_summary: {
           name: a.activityName,
           typeKey: a.activityType?.typeKey,
           setRows: rows.length,
+          source: parsed?.strengthRows?.length ? "fit" : "garmin_api",
         } as Json,
       };
     });

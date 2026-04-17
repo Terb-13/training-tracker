@@ -394,14 +394,17 @@ export function TrainingDashboard({
                     </CardDescription>
                   </CardHeader>
                   <CardContent className="overflow-x-auto">
-                    <table className="w-full min-w-[480px] border-collapse text-sm">
+                    <table className="w-full min-w-[720px] border-collapse text-sm">
                       <thead>
                         <tr className="border-b border-[var(--border)] text-left text-[var(--muted-foreground)]">
                           <th className="py-2 pr-3 font-medium">Exercise</th>
                           <th className="py-2 pr-3 font-medium">Set</th>
                           <th className="py-2 pr-3 font-medium">Reps</th>
                           <th className="py-2 pr-3 font-medium">Weight (lb)</th>
-                          <th className="py-2 font-medium">Volume</th>
+                          <th className="py-2 pr-3 font-medium">Weight (kg)</th>
+                          <th className="py-2 pr-3 font-medium">Rest (s)</th>
+                          <th className="py-2 pr-3 font-medium">Volume</th>
+                          <th className="py-2 font-medium">Notes</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -416,10 +419,17 @@ export function TrainingDashboard({
                             <td className="py-2 pr-3">
                               {row.weight_lbs != null ? Math.round(Number(row.weight_lbs) * 10) / 10 : "—"}
                             </td>
-                            <td className="py-2">
+                            <td className="py-2 pr-3">
+                              {row.weight_kg != null ? Math.round(Number(row.weight_kg) * 100) / 100 : "—"}
+                            </td>
+                            <td className="py-2 pr-3">{row.rest_seconds ?? "—"}</td>
+                            <td className="py-2 pr-3">
                               {row.volume_lbs != null
                                 ? Math.round(row.volume_lbs).toLocaleString()
                                 : "—"}
+                            </td>
+                            <td className="max-w-[200px] truncate py-2 text-[var(--muted-foreground)]" title={row.notes ?? ""}>
+                              {row.notes ?? "—"}
                             </td>
                           </tr>
                         ))}
