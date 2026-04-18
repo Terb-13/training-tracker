@@ -69,6 +69,7 @@ export function TrainingDashboard({
           last: s.last,
           durationMin: s.durationMin,
           loadHint: s.loadHint,
+          hasSession: s.hasSession,
         })),
         garminHealth: {
           sleepH: data.garmin.sleepHours,
@@ -164,7 +165,7 @@ export function TrainingDashboard({
             <KpiCard
               title="Current weight"
               value={`${currentWeight.toFixed(1)} lbs`}
-              hint={data.hasRealData ? "From Garmin body composition" : "Sample data until sync"}
+              hint={data.hasRealData ? "From Garmin body composition" : "Connect Garmin in Settings for live weight"}
             />
             <KpiCard
               title="Projected weekly loss"
@@ -190,7 +191,7 @@ export function TrainingDashboard({
           <div className="grid gap-6 xl:grid-cols-3">
             <ChartCard
               title="Weight trend (7 days)"
-              description={data.hasRealData ? "Live from Garmin" : "Sample — sync for live data"}
+              description={data.hasRealData ? "Live from Garmin" : "Illustrative trend until weight syncs"}
             >
               <ResponsiveContainer width="100%" height={240}>
                 <LineChart data={data.weightSeries}>
@@ -246,7 +247,7 @@ export function TrainingDashboard({
             </ChartCard>
             <ChartCard
               title="Weekly rhythm scores"
-              description={data.hasRealData ? "From daily deficit activity load" : "Sample trend"}
+              description={data.hasRealData ? "From daily deficit activity load" : "Placeholder until deficit data fills in"}
             >
               <ResponsiveContainer width="100%" height={240}>
                 <BarChart data={data.weeklyRhythmScores}>
@@ -311,7 +312,8 @@ export function TrainingDashboard({
           <div className="flex flex-wrap items-center gap-2 text-sm text-[var(--muted-foreground)]">
             <Dumbbell className="h-4 w-4 shrink-0" />
             <span>
-              Garmin — Chest & Triceps, Back & Biceps, Shoulders & Core (FIT sets when available)
+              Last 30 days from Garmin — upper-body durability for September&apos;s 200 miles: short basement
+              sessions, big payoff on the climbs.
             </span>
           </div>
 
@@ -322,7 +324,7 @@ export function TrainingDashboard({
                   <Target className="h-4 w-4 text-indigo-600 dark:text-indigo-400" />
                   This week
                 </CardTitle>
-                <CardDescription>{data.strengthWeekly.weekLabel}</CardDescription>
+                <CardDescription>{data.strengthWeekly.weekLabel} · Mon–Sun</CardDescription>
               </CardHeader>
               <CardContent>
                 <p className="text-2xl font-semibold tabular-nums text-[var(--foreground)]">
@@ -332,23 +334,32 @@ export function TrainingDashboard({
                   </span>
                 </p>
                 <p className="mt-1 text-xs text-[var(--muted-foreground)]">
-                  Basement goal: hit {data.strengthWeekly.sessionsTarget} strength sessions per week
+                  Strength sessions logged this calendar week — {data.strengthWeekly.sessionsTarget} per week supports
+                  LOTOJA pulls and neck stability on long days.
                 </p>
               </CardContent>
             </Card>
             {data.strength.map((s) => (
-              <Card key={`${s.label}-${s.last}`}>
+              <Card
+                key={s.label}
+                className={
+                  s.hasSession
+                    ? "border-emerald-200/40 dark:border-emerald-900/40"
+                    : "opacity-85 ring-1 ring-dashed ring-[var(--border)]"
+                }
+              >
                 <CardHeader className="pb-2">
                   <CardTitle className="text-base">{s.label}</CardTitle>
-                  <CardDescription>Last: {s.last}</CardDescription>
+                  <CardDescription>Last session: {s.last}</CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-1 text-sm">
                   <p>
-                    <span className="text-[var(--muted-foreground)]">Duration:</span> {s.durationMin} min
+                    <span className="text-[var(--muted-foreground)]">Duration:</span>{" "}
+                    {s.hasSession ? `${s.durationMin} min` : "—"}
                   </p>
                   {s.volumeKg != null ? (
                     <p>
-                      <span className="text-[var(--muted-foreground)]">Volume est.:</span>{" "}
+                      <span className="text-[var(--muted-foreground)]">Garmin volume est.:</span>{" "}
                       {Math.round(s.volumeKg)} kg
                     </p>
                   ) : null}
@@ -361,7 +372,7 @@ export function TrainingDashboard({
           {data.strengthProgressionChart.length > 0 && data.strengthProgressionSeries.length > 0 ? (
             <ChartCard
               title="Avg weight (lb) per exercise"
-              description="Weighted by reps when Garmin records weight; last 90 days"
+              description="Weighted by reps when weight is logged; top lifts over the last 30 days"
             >
               <ResponsiveContainer width="100%" height={280}>
                 <LineChart data={data.strengthProgressionChart}>
@@ -441,7 +452,8 @@ export function TrainingDashboard({
             <h3 className="text-sm font-semibold text-[var(--foreground)]">Workouts & sets</h3>
             {data.strengthSessions.length === 0 ? (
               <p className="text-sm text-[var(--muted-foreground)]">
-                Run a Garmin sync after your next dumbbell session — FIT files populate reps and weights.
+                No strength workouts in the last 30 days in your account. After you train and sync, sets and weights
+                appear here automatically.
               </p>
             ) : (
               data.strengthSessions.map((session) => (
@@ -561,7 +573,7 @@ export function TrainingDashboard({
               MacrosFirst bridge
             </div>
             <span className="rounded-full bg-[var(--muted)] px-3 py-1 text-xs text-[var(--muted-foreground)]">
-              calories_in placeholder
+              Macros bridge (calories_in) coming soon
             </span>
             {profile?.wednesday_lunch_relax !== false && (
               <span

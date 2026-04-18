@@ -1,4 +1,4 @@
-import { format, subDays, subWeeks } from "date-fns";
+import { endOfWeek, format, isWithinInterval, startOfWeek, subDays, subWeeks } from "date-fns";
 
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import type { Database } from "@/types/database";
@@ -8,7 +8,6 @@ import {
   TARGET_WEEKLY_LOSS_MIN,
   cyclingWeek as placeholderCycling,
   garminAutoRhythm,
-  garminStrengthSessions as placeholderStrength,
   lotojaReadiness as placeholderReadiness,
   nutritionPlaceholder,
   projectedFatLossSeries as placeholderProjected,
@@ -88,6 +87,8 @@ export type DashboardViewModel = {
     durationMin: number;
     volumeKg: number | null;
     loadHint: string;
+    /** False when no session mapped to this split in the last 30 days */
+    hasSession: boolean;
   }[];
   strengthSessions: StrengthSessionDetailVm[];
   strengthVolumeBySession: { dateLabel: string; workout: string; volumeLbs: number }[];
@@ -113,6 +114,22 @@ export type DashboardViewModel = {
   lastSyncAt: string | null;
   deficitBarChart: { day: string; kcal: number }[];
 };
+
+/** Prefer typed column; fall back to tolerant-mode snapshot in raw_data. */
+function deficitKcalFromRow(
+  row: Pick<Database["public"]["Tables"]["daily_deficit"]["Row"], "deficit_kcal" | "raw_data"> | null | undefined,
+): number | null {
+  if (row == null) return null;
+  if (typeof row.deficit_kcal === "number" && Number.isFinite(row.deficit_kcal)) {
+    return row.deficit_kcal;
+  }
+  const rd = row.raw_data;
+  if (rd && typeof rd === "object" && !Array.isArray(rd)) {
+    const v = (rd as Record<string, unknown>).deficit_kcal;
+    if (typeof v === "number" && Number.isFinite(v)) return v;
+  }
+  return null;
+}
 
 function isCyclingDb(a: {
   sport_type_key: string | null;
@@ -168,13 +185,19 @@ function resolveStrengthSetRow(r: StrengthExerciseRow): StrengthSetDetail {
       : ex.weight_kg != null
         ? ex.weight_kg / 0.453592
         : null;
+  const displayLb =
+    weightLbsTyped != null
+      ? weightLbsTyped
+      : lbEquiv != null
+        ? Math.round(lbEquiv * 10) / 10
+        : null;
   const volLb =
     reps != null && lbEquiv != null ? Math.round(reps * lbEquiv * 10) / 10 : null;
   return {
     exercise_name: r.exercise_name,
     set_number: r.set_number,
     reps,
-    weight_lbs: weightLbsTyped,
+    weight_lbs: displayLb,
     weight_kg: ex.weight_kg,
     rest_seconds: ex.rest_seconds,
     notes: ex.notes,
@@ -205,6 +228,60 @@ function groupStrengthSets(rows: StrengthSetDetail[]): StrengthExerciseGroupVm[]
       sets: sorted,
     };
   });
+}
+
+const STRENGTH_SPLITS = ["Chest & Triceps", "Back & Biceps", "Shoulders & Core"] as const;
+
+function matchesStrengthSplit(sessionLabel: string, split: string): boolean {
+  const s = sessionLabel.toLowerCase();
+  if (split === "Chest & Triceps") {
+    return s.includes("chest") || s.includes("tricep") || s.includes("push");
+  }
+  if (split === "Back & Biceps") {
+    return s.includes("back") || s.includes("bicep") || s.includes("pull");
+  }
+  if (split === "Shoulders & Core") {
+    return s.includes("shoulder") || s.includes("core") || s.includes("rotator");
+  }
+  return sessionLabel.trim() === split;
+}
+
+function classifyStrengthSplit(
+  sessionLabel: string,
+  exerciseRows: StrengthExerciseRow[],
+): (typeof STRENGTH_SPLITS)[number] | null {
+  const fromWorkouts = [...new Set(exerciseRows.map((r) => r.workout_name))];
+  for (const w of fromWorkouts) {
+    for (const split of STRENGTH_SPLITS) {
+      if (w.trim() === split || matchesStrengthSplit(w, split)) return split;
+    }
+  }
+  for (const split of STRENGTH_SPLITS) {
+    if (matchesStrengthSplit(sessionLabel, split)) return split;
+  }
+  return null;
+}
+
+function buildStrengthLoadHint(rows: StrengthExerciseRow[]): string {
+  if (rows.length === 0) {
+    return "No session in the last 30 days — stack weeks for September.";
+  }
+  const resolved = rows.map(resolveStrengthSetRow);
+  const maxLb = Math.max(0, ...resolved.map((r) => r.weight_lbs ?? 0));
+  const uniq = [...new Set(resolved.map((r) => r.exercise_name))].slice(0, 3);
+  const short = uniq
+    .map((n) =>
+      n
+        .replace(/\b(dumbbell|dumbbells|db)\b/gi, "DB")
+        .split(/\s+/)
+        .slice(0, 2)
+        .join(" "),
+    )
+    .join(" + ");
+  if (maxLb > 0) {
+    return `${Math.round(maxLb)} lb — ${short || "upper-body work"}`;
+  }
+  return `${resolved.length} sets · ${short || "logged"}`;
 }
 
 function exerciseDataKey(name: string, i: number): string {
@@ -278,19 +355,20 @@ export async function loadDashboardData(userId: string): Promise<DashboardViewMo
     .eq("user_id", userId)
     .gte("start_time_gmt", since.toISOString());
 
+  const strengthSince = subDays(new Date(), 30);
   const { data: strengthRows } = await supabase
     .from("strength_sessions")
     .select("*")
     .eq("user_id", userId)
-    .order("started_at", { ascending: false })
-    .limit(12);
+    .gte("started_at", strengthSince.toISOString())
+    .order("started_at", { ascending: false });
 
   const { data: strengthSessionDetail } = await supabase
     .from("strength_sessions")
-    .select("garmin_activity_id, label, started_at")
+    .select("garmin_activity_id, label, started_at, duration_sec, volume_kg")
     .eq("user_id", userId)
-    .order("started_at", { ascending: false })
-    .limit(24);
+    .gte("started_at", strengthSince.toISOString())
+    .order("started_at", { ascending: false });
 
   const detailIds = strengthSessionDetail?.map((s) => s.garmin_activity_id) ?? [];
   let exerciseRows: StrengthExerciseRow[] = [];
@@ -304,25 +382,11 @@ export async function loadDashboardData(userId: string): Promise<DashboardViewMo
     exerciseRows = ex ?? [];
   }
 
-  const progressionSince = subDays(new Date(), 90);
-  const { data: sessionsProg } = await supabase
-    .from("strength_sessions")
-    .select("garmin_activity_id, started_at, label")
-    .eq("user_id", userId)
-    .gte("started_at", progressionSince.toISOString())
-    .order("started_at", { ascending: true });
-
+  const sessionsProg = strengthSessionDetail
+    ?.slice()
+    .sort((a, b) => new Date(a.started_at).getTime() - new Date(b.started_at).getTime());
   const progIds = sessionsProg?.map((s) => s.garmin_activity_id) ?? [];
-  let progExerciseRows: StrengthExerciseRow[] = [];
-  if (progIds.length > 0) {
-    const { data: pr } = await supabase
-      .from("strength_exercises")
-      .select("*")
-      .eq("user_id", userId)
-      .in("garmin_activity_id", progIds)
-      .order("sort_index", { ascending: true });
-    progExerciseRows = pr ?? [];
-  }
+  const progExerciseRows = exerciseRows.filter((r) => progIds.includes(r.garmin_activity_id));
 
   const { data: deficits } = await supabase
     .from("daily_deficit")
@@ -398,32 +462,46 @@ export async function loadDashboardData(userId: string): Promise<DashboardViewMo
 
   const showCycling = hasRealData && cyclingActs.length > 0;
 
-  const strength =
-    strengthRows?.map((s) => ({
-      label: s.label,
-      last: format(new Date(s.started_at), "MMM d"),
-      durationMin: Math.round(s.duration_sec / 60),
-      volumeKg: s.volume_kg,
-      loadHint: `Garmin · ${s.volume_kg ? `${Math.round(s.volume_kg)} kg est` : "volume est."}`,
-    })) ?? [];
-
-  const strengthOut =
-    strength.length > 0
-      ? strength
-      : placeholderStrength.map((s) => ({
-          label: s.label,
-          last: s.last,
-          durationMin: s.durationMin,
-          volumeKg: null,
-          loadHint: s.loadHint,
-        }));
-
   const byAct = new Map<number, StrengthExerciseRow[]>();
   for (const row of exerciseRows) {
     const list = byAct.get(row.garmin_activity_id) ?? [];
     list.push(row);
     byAct.set(row.garmin_activity_id, list);
   }
+
+  const splitLatest = new Map<string, (NonNullable<typeof strengthSessionDetail>[number])>();
+  for (const s of strengthSessionDetail ?? []) {
+    const rows = byAct.get(s.garmin_activity_id) ?? [];
+    const split = classifyStrengthSplit(s.label, rows);
+    if (!split) continue;
+    const prev = splitLatest.get(split);
+    if (!prev || new Date(s.started_at) > new Date(prev.started_at)) {
+      splitLatest.set(split, s);
+    }
+  }
+
+  const strengthOut = STRENGTH_SPLITS.map((split) => {
+    const last = splitLatest.get(split);
+    if (!last) {
+      return {
+        label: split,
+        last: "—",
+        durationMin: 0,
+        volumeKg: null,
+        loadHint: "No session in the last 30 days — your next basement block counts.",
+        hasSession: false,
+      };
+    }
+    const rows = byAct.get(last.garmin_activity_id) ?? [];
+    return {
+      label: split,
+      last: format(new Date(last.started_at), "MMM d"),
+      durationMin: Math.round(last.duration_sec / 60),
+      volumeKg: last.volume_kg,
+      loadHint: buildStrengthLoadHint(rows),
+      hasSession: true,
+    };
+  });
 
   const strengthSessions: StrengthSessionDetailVm[] =
     strengthSessionDetail?.map((s) => {
@@ -519,23 +597,25 @@ export async function loadDashboardData(userId: string): Promise<DashboardViewMo
         })
       : [];
 
-  const weekStart = subDays(new Date(), 7);
-  const sessionsLast7 =
-    strengthRows?.filter((s) => new Date(s.started_at) >= weekStart).length ?? 0;
+  const weekStart = startOfWeek(new Date(), { weekStartsOn: 1 });
+  const weekEnd = endOfWeek(new Date(), { weekStartsOn: 1 });
+  const sessionsInWeek =
+    strengthRows?.filter((s) =>
+      isWithinInterval(new Date(s.started_at), { start: weekStart, end: weekEnd }),
+    ).length ?? 0;
   const strengthWeekly = {
-    sessionsDone: sessionsLast7,
+    sessionsDone: sessionsInWeek,
     sessionsTarget: 3,
-    weekLabel: `${format(weekStart, "MMM d")} – ${format(new Date(), "MMM d")}`,
+    weekLabel: `${format(weekStart, "MMM d")} – ${format(weekEnd, "MMM d")}`,
   };
 
-  const strengthVolumeBySession = strengthSessions
+  const strengthVolumeBySession = [...strengthSessions]
+    .sort((a, b) => new Date(a.started_at).getTime() - new Date(b.started_at).getTime())
     .map((s) => ({
       dateLabel: s.dateLabel,
       workout: s.workout_name,
       volumeLbs: s.totalVolumeLbs,
-    }))
-    .slice(0, 12)
-    .reverse();
+    }));
 
   const garmin =
     hasRealData && profile?.garmin_last_sync_at
@@ -548,10 +628,9 @@ export async function loadDashboardData(userId: string): Promise<DashboardViewMo
         };
 
   const latestDef = deficits?.[0];
+  const latestDeficitKcal = deficitKcalFromRow(latestDef);
   const deficitVal =
-    typeof latestDef?.deficit_kcal === "number"
-      ? Math.abs(latestDef.deficit_kcal)
-      : nutritionPlaceholder.deficitVsTarget;
+    latestDeficitKcal != null ? Math.abs(latestDeficitKcal) : nutritionPlaceholder.deficitVsTarget;
   const wednesdayBonus = profile?.wednesday_lunch_relax ? 320 : 0;
 
   const weeklyRhythmScores =
@@ -577,7 +656,7 @@ export async function loadDashboardData(userId: string): Promise<DashboardViewMo
     sortedDef.length > 0
       ? sortedDef.map((d) => ({
           day: format(new Date(d.date + "T12:00:00"), "EEE").slice(0, 1),
-          kcal: Math.max(0, Math.min(500, Math.abs(d.deficit_kcal ?? 0))),
+          kcal: Math.max(0, Math.min(500, Math.abs(deficitKcalFromRow(d) ?? 0))),
         }))
       : [
           { day: "M", kcal: 260 },
