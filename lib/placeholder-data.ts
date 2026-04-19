@@ -1,4 +1,4 @@
-/** Realistic placeholders until Garmin + MacrosFirst sync — LOTOJA 2026 prep */
+/** Realistic placeholders until Strava + MacrosFirst sync — LOTOJA 2026 prep */
 
 export const START_WEIGHT_LBS = 204.2;
 export const TARGET_WEEKLY_LOSS_MAX = 1;
@@ -41,7 +41,7 @@ export const cyclingWeek = {
   ],
 };
 
-export const garminStrengthSessions = [
+export const demoStrengthSessions = [
   {
     label: "Chest & Triceps",
     last: "Apr 11",
@@ -52,7 +52,7 @@ export const garminStrengthSessions = [
     label: "Back & Biceps",
     last: "Apr 9",
     durationMin: 52,
-    loadHint: "Rows + curls — Garmin strength",
+    loadHint: "Rows + curls — basement strength",
   },
   {
     label: "Shoulders & Core",
@@ -62,7 +62,7 @@ export const garminStrengthSessions = [
   },
 ] as const;
 
-export const garminAutoRhythm = {
+export const defaultRecoverySignals = {
   sleepH: 6.7,
   hrvMs: 52,
   restingHr: 54,
@@ -93,14 +93,14 @@ export function buildWeeklyGrokPayload(input: {
   weightSeries?: { date: string; weight: number }[];
   cycling?: typeof cyclingWeek;
   strength?: readonly { label: string; last: string; durationMin: number; loadHint: string }[];
-  garminHealth?: typeof garminAutoRhythm;
+  recoveryHealth?: typeof defaultRecoverySignals;
   nutrition?: typeof nutritionPlaceholder;
   lotojaReadinessPct?: number;
 }) {
   const last7 = (input.weightSeries ?? weightSeries).slice(-7);
   const cyc = input.cycling ?? cyclingWeek;
-  const str = input.strength ?? garminStrengthSessions;
-  const gh = input.garminHealth ?? garminAutoRhythm;
+  const str = input.strength ?? demoStrengthSessions;
+  const rh = input.recoveryHealth ?? defaultRecoverySignals;
   const nut = input.nutrition ?? nutritionPlaceholder;
   const lr = input.lotojaReadinessPct ?? lotojaReadiness;
   return {
@@ -119,7 +119,7 @@ export function buildWeeklyGrokPayload(input: {
     weight_lbs: last7,
     cycling: cyc,
     strength: str,
-    garminHealth: gh,
+    recoveryHealth: rh,
     nutrition: nut,
     scores: {
       rhythmWeeklyAvg: 84,

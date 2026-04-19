@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { runGarminSync } from "@/lib/sync/garmin-sync";
+import { runStravaSync } from "@/lib/sync/strava-sync";
 import { createServiceRoleClient } from "@/lib/supabase/admin";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 
@@ -22,7 +22,7 @@ export async function POST(request: Request) {
       if (error || !profile) {
         return NextResponse.json({ error: "Profile not found" }, { status: 404 });
       }
-      const result = await runGarminSync(body.userId, admin, profile);
+      const result = await runStravaSync(body.userId, admin, profile);
       return NextResponse.json(result);
     }
 
@@ -39,7 +39,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Profile not found" }, { status: 404 });
     }
 
-    const result = await runGarminSync(user.id, supabase, profile);
+    const result = await runStravaSync(user.id, supabase, profile);
     return NextResponse.json(result);
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Sync error";

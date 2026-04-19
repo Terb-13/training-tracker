@@ -16,7 +16,7 @@ export default function HomePage() {
             Train fast at dawn. Protect the routine. Race September strong.
           </h1>
           <p className="max-w-2xl text-lg text-[var(--muted-foreground)]">
-            A solo dashboard for Brett — KPIs, cycling base, Garmin strength, nutrition placeholders,
+            A solo dashboard for Brett — KPIs, Strava rides, manual strength, nutrition placeholders,
             and Grok-ready weekly exports. Built for 6:45 a.m. clarity.
           </p>
           <div className="flex flex-wrap gap-3">

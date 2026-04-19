@@ -31,6 +31,7 @@ import { Label } from "@/components/ui/label";
 import { Slider } from "@/components/ui/slider";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { createClient } from "@/lib/supabase/client";
+import { ManualStrengthForm } from "@/components/dashboard/manual-strength-form";
 import { SyncButton } from "@/components/dashboard/sync-button";
 
 export function TrainingDashboard({
@@ -50,10 +51,10 @@ export function TrainingDashboard({
   const weeklyLoss = data.weeklyLossLb;
 
   const todayRhythm = useMemo(() => {
-    const base = data.garmin.recoveryScore;
+    const base = data.recovery.recoveryScore;
     const adj = (familyLoad[0] + workLoad[0]) / 2;
     return Math.min(100, Math.max(40, Math.round(base - adj * 0.08 + 12)));
-  }, [familyLoad, workLoad, data.garmin.recoveryScore]);
+  }, [familyLoad, workLoad, data.recovery.recoveryScore]);
 
   const grokPayload = useMemo(
     () =>
@@ -71,11 +72,11 @@ export function TrainingDashboard({
           loadHint: s.loadHint,
           hasSession: s.hasSession,
         })),
-        garminHealth: {
-          sleepH: data.garmin.sleepHours,
-          hrvMs: data.garmin.hrvMs,
-          restingHr: data.garmin.restingHr,
-          recoveryScore: data.garmin.recoveryScore,
+        recoveryHealth: {
+          sleepH: data.recovery.sleepHours,
+          hrvMs: data.recovery.hrvMs,
+          restingHr: data.recovery.restingHr,
+          recoveryScore: data.recovery.recoveryScore,
         },
         nutrition: {
           caloriesAvg: data.nutrition.caloriesAvg,
@@ -120,11 +121,11 @@ export function TrainingDashboard({
           </p>
           {data.lastSyncAt ? (
             <p className="mt-2 text-xs text-[var(--muted-foreground)]">
-              Last Garmin sync: {new Date(data.lastSyncAt).toLocaleString()}
+              Last Strava sync: {new Date(data.lastSyncAt).toLocaleString()}
             </p>
           ) : (
             <p className="mt-2 text-xs text-amber-700 dark:text-amber-300">
-              No Garmin sync yet — add credentials in Settings, then sync.
+              No Strava sync yet — connect in Settings, then sync rides.
             </p>
           )}
         </div>
@@ -140,7 +141,7 @@ export function TrainingDashboard({
             <Button variant="outline" asChild>
               <Link href="/dashboard/settings" className="gap-2">
                 <Settings className="h-4 w-4" />
-                Garmin settings
+                Settings
               </Link>
             </Button>
             <SyncButton />
@@ -165,7 +166,11 @@ export function TrainingDashboard({
             <KpiCard
               title="Current weight"
               value={`${currentWeight.toFixed(1)} lbs`}
-              hint={data.hasRealData ? "From Garmin body composition" : "Connect Garmin in Settings for live weight"}
+              hint={
+                data.hasRealData
+                  ? "From your weight log (body composition)"
+                  : "Log weight in Settings for a live curve"
+              }
             />
             <KpiCard
               title="Projected weekly loss"
@@ -179,7 +184,7 @@ export function TrainingDashboard({
             <KpiCard
               title="Today’s Rhythm Score"
               value={`${todayRhythm}`}
-              hint="Garmin recovery + family/work load"
+              hint="Recovery signals + family/work load"
             />
             <KpiCard
               title="LOTOJA readiness"
@@ -191,7 +196,7 @@ export function TrainingDashboard({
           <div className="grid gap-6 xl:grid-cols-3">
             <ChartCard
               title="Weight trend (7 days)"
-              description={data.hasRealData ? "Live from Garmin" : "Illustrative trend until weight syncs"}
+              description={data.hasRealData ? "From logged weights" : "Illustrative trend until you log weight"}
             >
               <ResponsiveContainer width="100%" height={240}>
                 <LineChart data={data.weightSeries}>
@@ -312,7 +317,7 @@ export function TrainingDashboard({
           <div className="flex flex-wrap items-center gap-2 text-sm text-[var(--muted-foreground)]">
             <Dumbbell className="h-4 w-4 shrink-0" />
             <span>
-              Last 30 days from Garmin — upper-body durability for September&apos;s 200 miles: short basement
+              Last 30 days logged — upper-body durability for September&apos;s 200 miles: short basement
               sessions, big payoff on the climbs.
             </span>
           </div>
@@ -359,7 +364,7 @@ export function TrainingDashboard({
                   </p>
                   {s.volumeKg != null ? (
                     <p>
-                      <span className="text-[var(--muted-foreground)]">Garmin volume est.:</span>{" "}
+                      <span className="text-[var(--muted-foreground)]">Volume est.:</span>{" "}
                       {Math.round(s.volumeKg)} kg
                     </p>
                   ) : null}
@@ -409,7 +414,7 @@ export function TrainingDashboard({
           {data.strengthVolumeBySession.length > 0 ? (
             <ChartCard
               title="Session volume (reps × weight)"
-              description="Lb-equivalent volume when weights are recorded in Garmin"
+              description="Lb-equivalent volume when weights are logged"
             >
               <ResponsiveContainer width="100%" height={260}>
                 <BarChart data={data.strengthVolumeBySession}>
@@ -448,16 +453,18 @@ export function TrainingDashboard({
             </ChartCard>
           ) : null}
 
+          <ManualStrengthForm />
+
           <div className="space-y-4">
             <h3 className="text-sm font-semibold text-[var(--foreground)]">Workouts & sets</h3>
             {data.strengthSessions.length === 0 ? (
               <p className="text-sm text-[var(--muted-foreground)]">
-                No strength workouts in the last 30 days in your account. After you train and sync, sets and weights
-                appear here automatically.
+                No strength workouts in the last 30 days. Log a session above or sync Strava if you track lifts
+                elsewhere.
               </p>
             ) : (
               data.strengthSessions.map((session) => (
-                <Card key={session.garmin_activity_id} className="overflow-hidden">
+                <Card key={session.external_activity_id} className="overflow-hidden">
                   <CardHeader className="pb-2">
                     <div className="flex flex-wrap items-start justify-between gap-2">
                       <div>
@@ -479,7 +486,7 @@ export function TrainingDashboard({
                       <p className="text-sm text-[var(--muted-foreground)]">No per-set rows for this session.</p>
                     ) : (
                       session.exercises.map((ex) => {
-                        const exKey = `${session.garmin_activity_id}::${ex.exercise_name}`;
+                        const exKey = `${session.external_activity_id}::${ex.exercise_name}`;
                         const open = expandedStrengthKey === exKey;
                         return (
                           <div
@@ -595,7 +602,7 @@ export function TrainingDashboard({
           </div>
           <ChartCard
             title="Deficit vs target (kcal)"
-            description={`Latest daily gap vs ${profile?.target_calories ?? 3000} kcal target · Garmin burn + BMR est.`}
+            description={`Latest daily gap vs ${profile?.target_calories ?? 3000} kcal target · Strava burn + BMR est.`}
           >
             <ResponsiveContainer width="100%" height={220}>
               <BarChart data={data.deficitBarChart}>
@@ -621,26 +628,26 @@ export function TrainingDashboard({
               <CardHeader>
                 <CardTitle className="flex items-center gap-2 text-base">
                   <Activity className="h-4 w-4" />
-                  Garmin auto signals
+                  Recovery signals
                 </CardTitle>
                 <CardDescription>Sleep · HRV · RHR · recovery</CardDescription>
               </CardHeader>
               <CardContent className="grid grid-cols-2 gap-3 text-sm">
                 <div>
                   <p className="text-[var(--muted-foreground)]">Sleep</p>
-                  <p className="text-lg font-semibold">{data.garmin.sleepHours} h</p>
+                  <p className="text-lg font-semibold">{data.recovery.sleepHours} h</p>
                 </div>
                 <div>
                   <p className="text-[var(--muted-foreground)]">HRV</p>
-                  <p className="text-lg font-semibold">{data.garmin.hrvMs} ms</p>
+                  <p className="text-lg font-semibold">{data.recovery.hrvMs} ms</p>
                 </div>
                 <div>
                   <p className="text-[var(--muted-foreground)]">Resting HR</p>
-                  <p className="text-lg font-semibold">{data.garmin.restingHr} bpm</p>
+                  <p className="text-lg font-semibold">{data.recovery.restingHr} bpm</p>
                 </div>
                 <div>
                   <p className="text-[var(--muted-foreground)]">Recovery</p>
-                  <p className="text-lg font-semibold">{data.garmin.recoveryScore}</p>
+                  <p className="text-lg font-semibold">{data.recovery.recoveryScore}</p>
                 </div>
               </CardContent>
             </Card>

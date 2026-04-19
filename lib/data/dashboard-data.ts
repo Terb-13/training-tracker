@@ -7,7 +7,7 @@ import {
   TARGET_WEEKLY_LOSS_MAX,
   TARGET_WEEKLY_LOSS_MIN,
   cyclingWeek as placeholderCycling,
-  garminAutoRhythm,
+  defaultRecoverySignals,
   lotojaReadiness as placeholderReadiness,
   nutritionPlaceholder,
   projectedFatLossSeries as placeholderProjected,
@@ -19,7 +19,7 @@ type StrengthExerciseRow = Database["public"]["Tables"]["strength_exercises"]["R
 
 export type ProfileRow = Database["public"]["Tables"]["profiles"]["Row"];
 
-export type GarminWellness = {
+export type RecoveryWellness = {
   sleepHours: number;
   hrvMs: number;
   restingHr: number;
@@ -47,7 +47,7 @@ export type StrengthExerciseGroupVm = {
 };
 
 export type StrengthSessionDetailVm = {
-  garmin_activity_id: number;
+  external_activity_id: number;
   workout_name: string;
   activity_name: string | null;
   dateLabel: string;
@@ -100,7 +100,7 @@ export type DashboardViewModel = {
     sessionsTarget: number;
     weekLabel: string;
   };
-  garmin: GarminWellness;
+  recovery: RecoveryWellness;
   nutrition: {
     caloriesAvg: number;
     proteinG: number;
@@ -151,6 +151,13 @@ function isCyclingDb(a: {
     const dfit = `${derived.fit_sport ?? ""} ${derived.fit_sub_sport ?? ""}`.toLowerCase();
     if (dfit.includes("cycling") || dfit.includes("indoorcycling")) return true;
   }
+  const strava = blob?.strava as Record<string, unknown> | undefined;
+  if (strava?.type && typeof strava.type === "string") {
+    const t = strava.type;
+    if (["Ride", "VirtualRide", "EBikeRide", "MountainBikeRide", "GravelRide"].includes(t)) {
+      return true;
+    }
+  }
   const s = `${a.sport_type_key ?? ""} ${a.activity_type ?? ""} ${a.activity_name ?? ""}`.toLowerCase();
   return s.includes("cycling") || s.includes("bike") || s.includes("peloton");
 }
@@ -164,7 +171,7 @@ function numOrNull(v: unknown): number | null {
   return null;
 }
 
-/** Prefer typed columns; fall back to raw_data then raw JSONB (Garmin sync stores full sets here). */
+/** Prefer typed columns; fall back to raw_data then raw JSONB. */
 function exerciseJsonBlob(r: StrengthExerciseRow): Record<string, unknown> | null {
   const rd = r.raw_data;
   if (rd && typeof rd === "object" && !Array.isArray(rd)) return rd as Record<string, unknown>;
@@ -316,21 +323,22 @@ function strengthRowExtras(r: StrengthExerciseRow): {
   };
 }
 
-function parseWellness(raw: ProfileRow["garmin_wellness"]): GarminWellness {
+function parseWellness(raw: ProfileRow["recovery_wellness"]): RecoveryWellness {
   if (raw && typeof raw === "object" && !Array.isArray(raw)) {
     const o = raw as Record<string, unknown>;
     return {
-      sleepHours: typeof o.sleepHours === "number" ? o.sleepHours : garminAutoRhythm.sleepH,
-      hrvMs: typeof o.hrvMs === "number" ? o.hrvMs : garminAutoRhythm.hrvMs,
-      restingHr: typeof o.restingHr === "number" ? o.restingHr : garminAutoRhythm.restingHr,
-      recoveryScore: typeof o.recoveryScore === "number" ? o.recoveryScore : garminAutoRhythm.recoveryScore,
+      sleepHours: typeof o.sleepHours === "number" ? o.sleepHours : defaultRecoverySignals.sleepH,
+      hrvMs: typeof o.hrvMs === "number" ? o.hrvMs : defaultRecoverySignals.hrvMs,
+      restingHr: typeof o.restingHr === "number" ? o.restingHr : defaultRecoverySignals.restingHr,
+      recoveryScore:
+        typeof o.recoveryScore === "number" ? o.recoveryScore : defaultRecoverySignals.recoveryScore,
     };
   }
   return {
-    sleepHours: garminAutoRhythm.sleepH,
-    hrvMs: garminAutoRhythm.hrvMs,
-    restingHr: garminAutoRhythm.restingHr,
-    recoveryScore: garminAutoRhythm.recoveryScore,
+    sleepHours: defaultRecoverySignals.sleepH,
+    hrvMs: defaultRecoverySignals.hrvMs,
+    restingHr: defaultRecoverySignals.restingHr,
+    recoveryScore: defaultRecoverySignals.recoveryScore,
   };
 }
 
@@ -365,19 +373,19 @@ export async function loadDashboardData(userId: string): Promise<DashboardViewMo
 
   const { data: strengthSessionDetail } = await supabase
     .from("strength_sessions")
-    .select("garmin_activity_id, label, started_at, duration_sec, volume_kg")
+    .select("external_activity_id, label, started_at, duration_sec, volume_kg")
     .eq("user_id", userId)
     .gte("started_at", strengthSince.toISOString())
     .order("started_at", { ascending: false });
 
-  const detailIds = strengthSessionDetail?.map((s) => s.garmin_activity_id) ?? [];
+  const detailIds = strengthSessionDetail?.map((s) => s.external_activity_id) ?? [];
   let exerciseRows: StrengthExerciseRow[] = [];
   if (detailIds.length > 0) {
     const { data: ex } = await supabase
       .from("strength_exercises")
       .select("*")
       .eq("user_id", userId)
-      .in("garmin_activity_id", detailIds)
+      .in("external_activity_id", detailIds)
       .order("sort_index", { ascending: true });
     exerciseRows = ex ?? [];
   }
@@ -385,8 +393,8 @@ export async function loadDashboardData(userId: string): Promise<DashboardViewMo
   const sessionsProg = strengthSessionDetail
     ?.slice()
     .sort((a, b) => new Date(a.started_at).getTime() - new Date(b.started_at).getTime());
-  const progIds = sessionsProg?.map((s) => s.garmin_activity_id) ?? [];
-  const progExerciseRows = exerciseRows.filter((r) => progIds.includes(r.garmin_activity_id));
+  const progIds = sessionsProg?.map((s) => s.external_activity_id) ?? [];
+  const progExerciseRows = exerciseRows.filter((r) => progIds.includes(r.external_activity_id));
 
   const { data: deficits } = await supabase
     .from("daily_deficit")
@@ -464,14 +472,14 @@ export async function loadDashboardData(userId: string): Promise<DashboardViewMo
 
   const byAct = new Map<number, StrengthExerciseRow[]>();
   for (const row of exerciseRows) {
-    const list = byAct.get(row.garmin_activity_id) ?? [];
+    const list = byAct.get(row.external_activity_id) ?? [];
     list.push(row);
-    byAct.set(row.garmin_activity_id, list);
+    byAct.set(row.external_activity_id, list);
   }
 
   const splitLatest = new Map<string, (NonNullable<typeof strengthSessionDetail>[number])>();
   for (const s of strengthSessionDetail ?? []) {
-    const rows = byAct.get(s.garmin_activity_id) ?? [];
+    const rows = byAct.get(s.external_activity_id) ?? [];
     const split = classifyStrengthSplit(s.label, rows);
     if (!split) continue;
     const prev = splitLatest.get(split);
@@ -492,7 +500,7 @@ export async function loadDashboardData(userId: string): Promise<DashboardViewMo
         hasSession: false,
       };
     }
-    const rows = byAct.get(last.garmin_activity_id) ?? [];
+    const rows = byAct.get(last.external_activity_id) ?? [];
     return {
       label: split,
       last: format(new Date(last.started_at), "MMM d"),
@@ -505,7 +513,7 @@ export async function loadDashboardData(userId: string): Promise<DashboardViewMo
 
   const strengthSessions: StrengthSessionDetailVm[] =
     strengthSessionDetail?.map((s) => {
-      const rows = byAct.get(s.garmin_activity_id) ?? [];
+      const rows = byAct.get(s.external_activity_id) ?? [];
       const resolved = rows.map(resolveStrengthSetRow);
       const exercises = groupStrengthSets(resolved);
       const sessionVol = exercises.reduce((acc, e) => acc + (e.totalVolumeLbs ?? 0), 0);
@@ -514,7 +522,7 @@ export async function loadDashboardData(userId: string): Promise<DashboardViewMo
           ? sessionVol
           : resolved.reduce((acc, r) => acc + (r.volume_lbs ?? 0), 0);
       return {
-        garmin_activity_id: s.garmin_activity_id,
+        external_activity_id: s.external_activity_id,
         workout_name: s.label,
         activity_name: rows[0]?.activity_name ?? null,
         dateLabel: format(new Date(s.started_at), "MMM d"),
@@ -526,9 +534,9 @@ export async function loadDashboardData(userId: string): Promise<DashboardViewMo
 
   const byActProg = new Map<number, StrengthExerciseRow[]>();
   for (const r of progExerciseRows) {
-    const list = byActProg.get(r.garmin_activity_id) ?? [];
+    const list = byActProg.get(r.external_activity_id) ?? [];
     list.push(r);
-    byActProg.set(r.garmin_activity_id, list);
+    byActProg.set(r.external_activity_id, list);
   }
 
   const volByExercise = new Map<string, number>();
@@ -546,7 +554,7 @@ export async function loadDashboardData(userId: string): Promise<DashboardViewMo
     const dataKey = exerciseDataKey(exerciseName, i);
     const points: { dateLabel: string; startedAt: string; avgWeightLbs: number }[] = [];
     for (const s of sessionsProg ?? []) {
-      const rows = byActProg.get(s.garmin_activity_id) ?? [];
+      const rows = byActProg.get(s.external_activity_id) ?? [];
       const same = rows.filter((r) => (r.exercise_name.trim() || "Exercise") === exerciseName);
       if (same.length === 0) continue;
       const sets = same.map(resolveStrengthSetRow);
@@ -617,15 +625,7 @@ export async function loadDashboardData(userId: string): Promise<DashboardViewMo
       volumeLbs: s.totalVolumeLbs,
     }));
 
-  const garmin =
-    hasRealData && profile?.garmin_last_sync_at
-      ? parseWellness(profile.garmin_wellness)
-      : {
-          sleepHours: garminAutoRhythm.sleepH,
-          hrvMs: garminAutoRhythm.hrvMs,
-          restingHr: garminAutoRhythm.restingHr,
-          recoveryScore: garminAutoRhythm.recoveryScore,
-        };
+  const recovery = parseWellness(profile?.recovery_wellness ?? null);
 
   const latestDef = deficits?.[0];
   const latestDeficitKcal = deficitKcalFromRow(latestDef);
@@ -688,7 +688,7 @@ export async function loadDashboardData(userId: string): Promise<DashboardViewMo
     strengthProgressionChart,
     strengthProgressionSeries,
     strengthWeekly,
-    garmin,
+    recovery,
     nutrition: {
       caloriesAvg: nutritionPlaceholder.caloriesAvg,
       proteinG: nutritionPlaceholder.proteinG,
@@ -699,7 +699,7 @@ export async function loadDashboardData(userId: string): Promise<DashboardViewMo
     },
     weeklyRhythmScores,
     lotojaReadiness,
-    lastSyncAt: profile?.garmin_last_sync_at ?? null,
+    lastSyncAt: profile?.strava_last_sync_at ?? null,
     deficitBarChart,
   };
 }

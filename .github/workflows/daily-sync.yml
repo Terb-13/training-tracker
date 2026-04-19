@@ -1,7 +1,7 @@
 # Calls POST /api/sync with the service role key (same as Supabase admin).
 # Set secrets: SUPABASE_SERVICE_ROLE_KEY, SYNC_USER_ID, APP_URL (or hardcode your Vercel URL).
 
-name: Daily Garmin Sync
+name: Daily Strava Sync
 
 on:
   workflow_dispatch:

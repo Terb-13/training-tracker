@@ -3,14 +3,14 @@ import { createCipheriv, createDecipheriv, randomBytes, scryptSync } from "crypt
 const ALGO = "aes-256-gcm";
 
 function getKey(): Buffer {
-  const secret = process.env.GARMIN_ENCRYPTION_KEY;
+  const secret = process.env.INTEGRATION_ENCRYPTION_KEY;
   if (!secret || secret.length < 16) {
-    throw new Error("Set GARMIN_ENCRYPTION_KEY (min 16 chars) for credential encryption");
+    throw new Error("Set INTEGRATION_ENCRYPTION_KEY (min 16 chars) for token encryption");
   }
-  return scryptSync(secret, "lotoja-garmin-salt", 32);
+  return scryptSync(secret, "lotoja-integration-salt", 32);
 }
 
-/** Encrypt arbitrary JSON for storage in profiles (password or OAuth tokens). */
+/** Encrypt arbitrary JSON for storage in profiles (e.g. Strava OAuth tokens). */
 export function encryptJson(payload: unknown): string {
   const key = getKey();
   const iv = randomBytes(12);

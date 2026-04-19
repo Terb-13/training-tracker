@@ -17,12 +17,9 @@ export interface Database {
           target_calories: number;
           starting_weight_lbs: number;
           wednesday_lunch_relax: boolean;
-          garmin_email: string | null;
-          garmin_password_encrypted: string | null;
-          garmin_tokens_encrypted: string | null;
-          garmin_last_sync_at: string | null;
-          max_hr: number | null;
-          garmin_wellness: Json | null;
+          strava_tokens_encrypted: string | null;
+          strava_last_sync_at: string | null;
+          recovery_wellness: Json | null;
           created_at: string;
           updated_at: string;
         };
@@ -33,12 +30,9 @@ export interface Database {
           target_calories?: number;
           starting_weight_lbs?: number;
           wednesday_lunch_relax?: boolean;
-          garmin_email?: string | null;
-          garmin_password_encrypted?: string | null;
-          garmin_tokens_encrypted?: string | null;
-          garmin_last_sync_at?: string | null;
-          max_hr?: number | null;
-          garmin_wellness?: Json | null;
+          strava_tokens_encrypted?: string | null;
+          strava_last_sync_at?: string | null;
+          recovery_wellness?: Json | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -49,12 +43,9 @@ export interface Database {
           target_calories?: number;
           starting_weight_lbs?: number;
           wednesday_lunch_relax?: boolean;
-          garmin_email?: string | null;
-          garmin_password_encrypted?: string | null;
-          garmin_tokens_encrypted?: string | null;
-          garmin_last_sync_at?: string | null;
-          max_hr?: number | null;
-          garmin_wellness?: Json | null;
+          strava_tokens_encrypted?: string | null;
+          strava_last_sync_at?: string | null;
+          recovery_wellness?: Json | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -64,7 +55,7 @@ export interface Database {
         Row: {
           id: string;
           user_id: string;
-          garmin_activity_id: number;
+          external_activity_id: number;
           activity_type: string | null;
           activity_name: string | null;
           start_time_gmt: string;
@@ -92,7 +83,7 @@ export interface Database {
         Insert: {
           id?: string;
           user_id: string;
-          garmin_activity_id: number;
+          external_activity_id: number;
           activity_type?: string | null;
           activity_name?: string | null;
           start_time_gmt: string;
@@ -120,7 +111,7 @@ export interface Database {
         Update: {
           id?: string;
           user_id?: string;
-          garmin_activity_id?: number;
+          external_activity_id?: number;
           activity_type?: string | null;
           activity_name?: string | null;
           start_time_gmt?: string;
@@ -187,7 +178,7 @@ export interface Database {
         Row: {
           id: string;
           user_id: string;
-          garmin_activity_id: number;
+          external_activity_id: number;
           label: string;
           started_at: string;
           duration_sec: number;
@@ -199,7 +190,7 @@ export interface Database {
         Insert: {
           id?: string;
           user_id: string;
-          garmin_activity_id: number;
+          external_activity_id: number;
           label: string;
           started_at: string;
           duration_sec: number;
@@ -211,7 +202,7 @@ export interface Database {
         Update: {
           id?: string;
           user_id?: string;
-          garmin_activity_id?: number;
+          external_activity_id?: number;
           label?: string;
           started_at?: string;
           duration_sec?: number;
@@ -226,7 +217,7 @@ export interface Database {
         Row: {
           id: string;
           user_id: string;
-          garmin_activity_id: number;
+          external_activity_id: number;
           activity_name: string | null;
           workout_name: string;
           exercise_name: string;
@@ -244,7 +235,7 @@ export interface Database {
         Insert: {
           id?: string;
           user_id: string;
-          garmin_activity_id: number;
+          external_activity_id: number;
           activity_name?: string | null;
           workout_name: string;
           exercise_name: string;
@@ -262,7 +253,7 @@ export interface Database {
         Update: {
           id?: string;
           user_id?: string;
-          garmin_activity_id?: number;
+          external_activity_id?: number;
           activity_name?: string | null;
           workout_name?: string;
           exercise_name?: string;

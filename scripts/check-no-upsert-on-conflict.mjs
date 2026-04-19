@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * Fails if app/lib/actions/components contain PostgREST .upsert( — ON CONFLICT breaks when
- * the DB has no matching unique constraint. Garmin sync uses delete-then-insert instead.
+ * the DB has no matching unique constraint. Strava sync uses delete-then-insert instead.
  */
 import fs from "node:fs";
 import path from "node:path";

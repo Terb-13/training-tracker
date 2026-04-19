@@ -1,11 +1,11 @@
 /**
- * Garmin-related batch writes: delete-then-insert for data tables; profile sync uses UPDATE only.
+ * Sync batch writes: delete-then-insert for data tables; profile sync uses UPDATE only.
  * No PostgREST .upsert / ON CONFLICT (guarded by `npm run check:no-upsert`).
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import {
-  pickProfileGarminUpdate,
+  pickProfileStravaUpdate,
   sanitizeActivityInsert,
   sanitizeBodyCompositionInsert,
   sanitizeDailyDeficitInsert,
@@ -156,13 +156,13 @@ export async function replaceDailyDeficitTolerant(
   return sanitized.length;
 }
 
-/** Update profile fields allowed on Garmin sync; strips unknown columns until PostgREST accepts. */
-export async function updateProfileGarminTolerant(
+/** Update profile fields allowed on Strava sync; strips unknown columns until PostgREST accepts. */
+export async function updateProfileStravaTolerant(
   supabase: SupabaseClient,
   userId: string,
   patch: Record<string, unknown>,
 ): Promise<void> {
-  let current = pickProfileGarminUpdate(patch);
+  let current = pickProfileStravaUpdate(patch);
   if (Object.keys(current).length === 0) return;
   for (let attempt = 0; attempt < 48; attempt++) {
     const { error } = await supabase.from("profiles").update(current as never).eq("id", userId);
@@ -178,7 +178,7 @@ export async function updateProfileGarminTolerant(
 }
 
 /**
- * Replace activities: delete by Garmin IDs, insert whitelist-sanitized rows (full payload in raw_data).
+ * Replace activities: delete by external IDs, insert whitelist-sanitized rows (full payload in raw_data).
  */
 export async function replaceActivitiesTolerant(
   supabase: SupabaseClient,
@@ -189,12 +189,12 @@ export async function replaceActivitiesTolerant(
   if (!userId || rows.some((r) => r.user_id !== userId)) {
     throw new Error("replaceActivitiesTolerant: all rows must share the same user_id");
   }
-  const garminIds = [...new Set(rows.map((r) => r.garmin_activity_id as number))];
+  const extIds = [...new Set(rows.map((r) => r.external_activity_id as number))];
   const { error: delErr } = await supabase
     .from("activities")
     .delete()
     .eq("user_id", userId)
-    .in("garmin_activity_id", garminIds);
+    .in("external_activity_id", extIds);
   if (delErr) throw new Error(delErr.message);
 
   const sanitized = rows.map((r) => sanitizeActivityInsert({ ...r }));
@@ -210,12 +210,12 @@ export async function replaceStrengthSessionsTolerant(
   if (!userId || rows.some((r) => r.user_id !== userId)) {
     throw new Error("replaceStrengthSessionsTolerant: all rows must share the same user_id");
   }
-  const garminIds = [...new Set(rows.map((r) => r.garmin_activity_id as number))];
+  const extIds = [...new Set(rows.map((r) => r.external_activity_id as number))];
   const { error: delErr } = await supabase
     .from("strength_sessions")
     .delete()
     .eq("user_id", userId)
-    .in("garmin_activity_id", garminIds);
+    .in("external_activity_id", extIds);
   if (delErr) throw new Error(delErr.message);
 
   const sanitized = rows.map((r) => sanitizeStrengthSessionInsert({ ...r }));
@@ -231,12 +231,12 @@ export async function insertStrengthExercisesTolerant(
   if (!userId || rows.some((r) => r.user_id !== userId)) {
     throw new Error("insertStrengthExercisesTolerant: all rows must share the same user_id");
   }
-  const garminIds = [...new Set(rows.map((r) => Number(r.garmin_activity_id)))];
+  const extIds = [...new Set(rows.map((r) => Number(r.external_activity_id)))];
   const { error: delErr } = await supabase
     .from("strength_exercises")
     .delete()
     .eq("user_id", userId)
-    .in("garmin_activity_id", garminIds);
+    .in("external_activity_id", extIds);
   if (delErr) throw new Error(delErr.message);
 
   for (let j = 0; j < rows.length; j += 200) {

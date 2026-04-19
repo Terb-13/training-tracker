@@ -1,12 +1,12 @@
 import type { Json } from "@/types/database";
 
-import { jsonSafe } from "@/lib/sync/parse-fit";
+import { jsonSafe } from "@/lib/sync/json-safe";
 
 /** Insert-shaped keys we send to PostgREST; unknown keys are merged into JSON blobs, never sent as columns. */
 const ACTIVITY_INSERT_KEYS = new Set([
   "id",
   "user_id",
-  "garmin_activity_id",
+  "external_activity_id",
   "activity_type",
   "activity_name",
   "start_time_gmt",
@@ -36,7 +36,7 @@ const ACTIVITY_INSERT_KEYS = new Set([
 const STRENGTH_SESSION_INSERT_KEYS = new Set([
   "id",
   "user_id",
-  "garmin_activity_id",
+  "external_activity_id",
   "label",
   "started_at",
   "duration_sec",
@@ -49,7 +49,7 @@ const STRENGTH_SESSION_INSERT_KEYS = new Set([
 const STRENGTH_EXERCISE_INSERT_KEYS = new Set([
   "id",
   "user_id",
-  "garmin_activity_id",
+  "external_activity_id",
   "activity_name",
   "workout_name",
   "exercise_name",
@@ -91,11 +91,10 @@ const DAILY_DEFICIT_INSERT_KEYS = new Set([
   "updated_at",
 ]);
 
-/** Profiles update keys (Garmin token refresh path only). */
-export const PROFILE_GARMIN_UPDATE_KEYS = new Set([
-  "garmin_tokens_encrypted",
-  "garmin_last_sync_at",
-  "garmin_wellness",
+/** Profiles update keys (Strava token refresh path). */
+export const PROFILE_STRAVA_UPDATE_KEYS = new Set([
+  "strava_tokens_encrypted",
+  "strava_last_sync_at",
 ]);
 
 function mergeJsonBlob(existing: unknown, extras: Record<string, unknown>): Json {
@@ -180,9 +179,9 @@ export function sanitizeDailyDeficitInsert(row: Record<string, unknown>): Record
 }
 
 /** Only known profile update keys; unknown keys are dropped (no crash). */
-export function pickProfileGarminUpdate(patch: Record<string, unknown>): Record<string, unknown> {
+export function pickProfileStravaUpdate(patch: Record<string, unknown>): Record<string, unknown> {
   const out: Record<string, unknown> = {};
-  for (const k of PROFILE_GARMIN_UPDATE_KEYS) {
+  for (const k of PROFILE_STRAVA_UPDATE_KEYS) {
     if (Object.prototype.hasOwnProperty.call(patch, k)) out[k] = patch[k];
   }
   return out;

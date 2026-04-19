@@ -41,5 +41,5 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 
-# Local Garmin FIT samples (offline analysis; large binaries)
+# Local large binary samples (offline analysis)
 *_ACTIVITY.fit

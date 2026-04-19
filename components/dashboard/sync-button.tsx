@@ -34,7 +34,7 @@ export function SyncButton() {
     <div className="flex flex-col gap-1">
       <Button type="button" variant="secondary" disabled={loading} onClick={onSync} className="gap-2">
         <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
-        {loading ? "Syncing…" : "Sync Garmin now"}
+        {loading ? "Syncing…" : "Sync Strava now"}
       </Button>
       {message ? <p className="text-xs text-[var(--muted-foreground)]">{message}</p> : null}
     </div>
